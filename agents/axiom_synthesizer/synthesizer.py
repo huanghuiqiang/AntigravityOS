@@ -63,8 +63,8 @@ def collect_raw_axioms() -> list[dict]:
     """
     扫描 Inbox（含子文件夹）+ Vault 根目录中所有 BouncerDump / WebClip 笔记，
     提取 [!abstract] callout 中的公理文本。
-
-    Returns: [{"axiom": str, "score": float, "source": str, "title": str}]
+    
+    新增：跳过已打标 synthesized: true 的笔记。
     """
     vault     = get_vault()
     inbox_dir = vault / INBOX_FOLDER
@@ -75,21 +75,23 @@ def collect_raw_axioms() -> list[dict]:
         try:
             content = f.read_text(encoding="utf-8")
             fm, body = _parse_frontmatter(content)
+            
+            # 【核心优化】增量逻辑：跳过已合成笔记
+            if fm.get("synthesized") is True:
+                return
+
             tags = fm.get("tags", [])
             if isinstance(tags, str):
                 tags = [tags]
             # 只采集 Bouncer/Clip 产生的笔记（不限 status）
-            if not any(t in tags for t in ["BouncerDump", "WebClip"]):
+            if not any(t in tags for t in ["BouncerDump", "WebClip", "PDFIngested"]):
                 return
             score = float(fm.get("score", 0))
             if score < MIN_AXIOM_SCORE:
                 return
 
-            # 匹配实际格式：
-            # > [!abstract] 核心公理 (Axiom)
-            # > 公理内容在这里
+            # 匹配实际格式
             axiom = ""
-            # 先尝试匹配 callout 格式（紧跟在 [!abstract] 块后面的 > 行）
             m = re.search(
                 r">\s*\[!abstract\][^\n]*\n>\s*(.+?)(?:\n|$)",
                 body
@@ -97,17 +99,15 @@ def collect_raw_axioms() -> list[dict]:
             if m:
                 axiom = m.group(1).strip()
 
-            # 兜底：匹配普通 > 文本（旧格式）
             if not axiom:
                 m2 = re.search(r"\[!abstract\].*?\n>\s*(.+?)(?:\n|$)", content)
                 if m2:
                     axiom = m2.group(1).strip()
 
-            # 过滤无效值
             if not axiom or axiom in ("待提炼", ""):
                 return
 
-            # 去重（完全相同的公理文本只收一次）
+            # 去重
             key = axiom[:80]
             if key in seen_axioms:
                 return
@@ -118,6 +118,7 @@ def collect_raw_axioms() -> list[dict]:
                 "score":  score,
                 "source": str(fm.get("source", "")),
                 "title":  str(fm.get("title", f.stem)),
+                "path":   str(f)  # 记录路径用于后续打标
             })
         except Exception:
             pass
@@ -132,8 +133,16 @@ def collect_raw_axioms() -> list[dict]:
     if inbox_dir.exists():
         _scan_dir(inbox_dir)
 
-    print(f"  📚 共收集到 {len(raw)} 条公理碎片（score ≥ {MIN_AXIOM_SCORE}）")
+    print(f"  📚 共收集到 {len(raw)} 条新公理碎片（score ≥ {MIN_AXIOM_SCORE}，增量扫描）")
     return raw
+
+
+def mark_as_synthesized(paths: list[str]):
+    """将已提取公理的笔记打上 synthesized: true 标记。"""
+    from skills.obsidian_bridge.bridge import update_frontmatter
+    print(f"  标记 {len(paths)} 条笔记为已合成...")
+    for p in paths:
+        update_frontmatter(p, {"synthesized": True})
 
 
 # ── Step 2: 读取现有地图（防止重复追加）────────────────────────
@@ -178,13 +187,13 @@ SYNTHESIS_PROMPT = """
 {raw_axioms}
 """
 
-def synthesize_with_llm(raw_axioms: list[dict], existing_titles: set[str]) -> list[dict]:
+def synthesize_with_llm(raw_axioms: list[dict], existing_titles: set[str]) -> tuple[list[dict], list[str]]:
     """
-    提交碎片公理给 LLM，返回提炼结果列表。
+    提交碎片公理给 LLM，返回 (提炼结果列表, 已处理的文件路径列表)。
     """
     if not OPENROUTER_KEY:
         print("  ❌ 未找到 GEMINI_API_KEY")
-        return []
+        return [], []
 
     # 去重 + 截断，避免超长 context
     unique_axioms = []
@@ -196,11 +205,16 @@ def synthesize_with_llm(raw_axioms: list[dict], existing_titles: set[str]) -> li
             unique_axioms.append(a)
 
     batch = unique_axioms[:MAX_AXIOMS_BATCH]
+    processed_paths = [a["path"] for a in batch if "path" in a]
+    
     print(f"  🧠 提交 {len(batch)} 条碎片给 Gemini 2.0 Flash 合成...")
+
+    # 构造简化的 batch 传给 LLM（省 token）
+    llm_batch = [{"axiom": a["axiom"], "title": a["title"]} for a in batch]
 
     prompt = SYNTHESIS_PROMPT.format(
         existing="\n".join(f"- {t}" for t in sorted(existing_titles)) or "(无)",
-        raw_axioms=json.dumps(batch, ensure_ascii=False, indent=2),
+        raw_axioms=json.dumps(llm_batch, ensure_ascii=False, indent=2),
     )
 
     try:
@@ -222,15 +236,13 @@ def synthesize_with_llm(raw_axioms: list[dict], existing_titles: set[str]) -> li
 
         if resp.status_code != 200:
             print(f"  ❌ LLM 响应异常: HTTP {resp.status_code}")
-            return []
+            return [], []
 
         raw_out = resp.json()["choices"][0]["message"]["content"]
         clean   = raw_out.strip().lstrip("```json").lstrip("```").rstrip("```").strip()
 
-        # LLM 可能返回 {"axioms": [...]} 或直接 [...]
         parsed = json.loads(clean)
         if isinstance(parsed, dict):
-            # 找第一个 list 类型的 value
             for v in parsed.values():
                 if isinstance(v, list):
                     parsed = v
@@ -239,11 +251,11 @@ def synthesize_with_llm(raw_axioms: list[dict], existing_titles: set[str]) -> li
                 parsed = []
 
         print(f"  ✅ 合成出 {len(parsed)} 条候选公理")
-        return parsed
+        return parsed, processed_paths
 
     except Exception as e:
         print(f"  ❌ LLM 合成出错: {e}")
-        return []
+        return [], []
 
 
 # ── Step 4: 更新认知地图 ─────────────────────────────────────────
@@ -427,9 +439,12 @@ def main(dry_run: bool = False, create_notes: bool = True):
     print(f"  🗺️  认知地图已有 {len(existing_titles)} 条公理")
 
     # 3. LLM 合成
-    synthesized = synthesize_with_llm(raw_axioms, existing_titles)
+    synthesized, processed_paths = synthesize_with_llm(raw_axioms, existing_titles)
     if not synthesized:
         print("\n⚠️  LLM 未合成出新公理。")
+        # 即使没出新公理，只要 LLM 处理过了，也把这批标记为 synthesized，防止死循环
+        if not dry_run and processed_paths:
+            mark_as_synthesized(processed_paths)
         notify([], [], len(raw_axioms), dry_run)
         return
 
@@ -441,7 +456,11 @@ def main(dry_run: bool = False, create_notes: bool = True):
     if create_notes and written:
         created_notes = create_axiom_notes(synthesized, dry_run=dry_run)
 
-    # 6. 推送通知
+    # 6. 标记为已合成（增量关键）
+    if not dry_run and processed_paths:
+        mark_as_synthesized(processed_paths)
+
+    # 7. 推送通知
     notify(written, created_notes, len(raw_axioms), dry_run)
 
     # 7. 汇总输出
