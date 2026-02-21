@@ -3,6 +3,7 @@ stats.py ── Antigravity OS 数据收集共享层
 A/B 两种仪表盘都从这里读数据，保持逻辑统一。
 """
 
+print("Starting script...")
 import os
 import re
 import sys
@@ -244,4 +245,11 @@ def collect() -> StatsReport:
     report.health_score = max(0.0, health)
     report.bottleneck   = bottlenecks[0] if bottlenecks else "✅ 系统运行正常"
 
+    import json
+    workspace_dir = Path("/Users/hugh/.openclaw/workspace/")
+    stats_path = workspace_dir / "stats.json"
+    stats_path.write_text(json.dumps(report.__dict__, indent=4, default=str))
+    print(json.dumps(report.__dict__, indent=4, default=str))
     return report
+
+collect()

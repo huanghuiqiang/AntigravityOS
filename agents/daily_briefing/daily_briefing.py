@@ -126,8 +126,18 @@ def build_report(r) -> str:
         "",
     ]
 
-    # ── 5. 今日重点 ──────────────────────────────────────────────
+    # ── 5. 今日重点 & 合成建议 ────────────────────────────────────
     pending_high = [n for n in r.notes if n.status == "pending" and n.score >= 9.0]
+    un_synthesized = [n for n in r.notes if n.get("synthesized") is not True and any(t in n.tags for t in ["BouncerDump", "WebClip", "PDFIngested"])]
+
+    if un_synthesized and len(un_synthesized) >= 5:
+        lines += [
+            "🧬 <b>认知提炼建议</b>",
+            f"  发现 <b>{len(un_synthesized)}</b> 条新碎片尚未合成。",
+            f"  建议执行: <code>python agents/axiom_synthesizer/synthesizer.py</code>",
+            "",
+        ]
+
     if pending_high:
         top = max(pending_high, key=lambda n: n.score)
         lines += [

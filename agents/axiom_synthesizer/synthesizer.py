@@ -50,11 +50,11 @@ from telegram_notify import send_message
 
 # ── 配置 ─────────────────────────────────────────────────────────
 OPENROUTER_KEY   = os.getenv("GEMINI_API_KEY", "")
-MODEL            = "google/gemini-2.0-flash-001"
+MODEL            = "google/gemini-pro-1.5"
 MAP_FILE         = "000 认知架构地图.md"
 INBOX_FOLDER     = "00_Inbox"
 MIN_AXIOM_SCORE  = float(os.getenv("SYNTH_MIN_SCORE", "8.0"))
-MAX_AXIOMS_BATCH = int(os.getenv("SYNTH_MAX_BATCH", "30"))   # 单次最多提交给 LLM 的公理数
+MAX_AXIOMS_BATCH = int(os.getenv("SYNTH_MAX_BATCH", "40"))   # 既然是手动执行，可以稍微加大 Batch
 
 
 # ── Step 1: 收集碎片公理 ─────────────────────────────────────────

@@ -52,9 +52,9 @@ Antigravity OS (github: AntigravityOS)
 ## 🔄 完整数据流（Pipeline）
 
 ```
-[07:50 Cron]  daily_briefing       推送 Telegram 早报（含健康警报 + 审计摘要）
+[07:50 Cron]  daily_briefing       推送 Telegram 早报（含健康警报 + 提炼建议 💡）
                                          │
-[08:00 Cron]  cognitive_bouncer    RSS 扫描 → LLM 评分 → 写 Inbox
+[08:00 Cron]  cognitive_bouncer    RSS 扫描 →【本地过滤】→ LLM 评分 → 写 Inbox
                                          │
 [每4h Cron]   knowledge_auditor    静默巡检健康分 → 若 <60 分立即触发【紧急警报】
                                          │
@@ -62,7 +62,7 @@ Antigravity OS (github: AntigravityOS)
                                          │
 [10:30 Cron]  inbox_processor      NotebookLM 合成报告 → 归档 → 发送处理摘要
                                          │
-[周日 21:00]  axiom_synthesizer    扫描碎片 → 提炼公理 → 更新认知架构地图
+[手动触发]     axiom_synthesizer    Hugh 看到早报提醒后运行 →【增量合成】→ 更新认知地图
                                          │
 [随时触发]     HEARTBEAT 巡检       Pi 心跳发现健康异常 → 在会话中【主动提醒】Hugh
 ```
@@ -72,16 +72,17 @@ Antigravity OS (github: AntigravityOS)
 ## ✅ 已完成功能（Phase 1-4.1）
 
 ### Phase 1-3 — 管道与基础输入 (已固化)
-*已实现：RSS Bouncer, NotebookLM Processor, PDF Ingester, Web Clipper, Axiom Synthesizer.*
+*已实现：RSS Bouncer, NotebookLM Processor, PDF Ingester, Web Clipper.*
 
-### Phase 4.1 — 治理、交互与主动性 (New)
+### Phase 4.1 — 治理、交互与成本优化 (New)
 
 | 组件 | 功能 | 状态 |
 |------|------------|------|
-| `knowledge_auditor` | **全库治理**：孤岛 Axiom 检测（Linkage 驱动）、Inbox 10天积压预警、元数据审计。 | ✅ |
-| `vault_query` | **Pi 语义中枢**：通过 Telegram 指挥 Pi 搜索全库、读取笔记、拉取 Pending 列表、查看统计。 | ✅ |
-| **Active Alerts** | **主动防御**：定期静默巡检，健康度异常立即推送警报；HEARTBEAT 注入，使 Pi 具备主动劝诱编织的能力。 | ✅ |
-| **Dashboard V2** | **全链路可视化**：TUI 与 HTML 版均集成「知识库健康」卡片，孤立公理一目了然。 | ✅ |
+| `knowledge_auditor` | **全库治理**：孤岛 Axiom 检测、Inbox 积压预警、元数据审计。**4H 静默巡检报警**。 | ✅ |
+| `vault_query` | **Pi 语义中枢**：通过 Telegram 指挥 Pi 语义搜索、读取笔记、查看统计。 | ✅ |
+| **Token 优化** | **增量合成**：Synthesizer 引入 `synthesized` 标记，仅处理新数据。Bouncer 增加**本地黑名单过滤**与 **Token 使用统计**。 | ✅ |
+| **Active Alerts** | **主动防御**：定期静默巡检，健康度异常立即报警；HEARTBEAT 注入，使 Pi 具备主动提醒能力。 | ✅ |
+| **Manual Trigger** | **按需合成**：Synthesizer 停止周日自动运行，改为在早报中智能引导手动触发，提升 ROI。 | ✅ |
 
 ---
 
@@ -89,15 +90,17 @@ Antigravity OS (github: AntigravityOS)
 
 ### 高优先级
 
-  - 推荐：Hetzner CAX11（ARM，€3.79/月）+ systemd 代替 cron
+- [ ] **VPS 部署 (Antigravity Cloud)**
+  - 将 OpenClaw Gateway + Cron 迁移到 VPS，解除“开机依赖”。
+  - 推荐：Hetzner CAX11（ARM，€3.79/月）。
 
-- [ ] **Axiom Synthesizer 增强**
-  - 当前只采集最近 30 条碎片（`MAX_BATCH=30`），未来按"未合成"状态增量处理
-  - 追加 `synthesized: true` frontmatter 标记，实现真正增量去重
+- [ ] **Web Clipper V2**
+  - 分离 Content 提取引擎，支持多驱动（Readability/Grok/Browserless）切换。
 
-- [ ] **Web Clipper → Pi Telegram 联动**
-  - 配置 Pi 的 pattern 识别：用户发 `clip https://...`
-  - Pi 自动调用 `web_clipper/clipper.py`，无需 CLI
+### 中低优先级
+
+- [ ] **Vault Inner-Linker**：自动根据公理关键词为相关笔记建立 `[[wikilink]]`。
+- [ ] **Daily Briefing 增强**：加入天气、重要日历提醒集成。
 
 ### 低优先级
 
