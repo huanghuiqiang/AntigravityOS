@@ -183,17 +183,51 @@ def build_recent_table(r: StatsReport) -> Panel:
                  border_style="blue")
 
 
+def build_audit_panel(r: StatsReport) -> Panel:
+    """展示 Knowledge Auditor 的扫描结果。"""
+    tbl = Table(box=box.SIMPLE, show_header=False, expand=True)
+    tbl.add_column("项目", style="bold")
+    tbl.add_column("状态",   justify="right")
+
+    # 1. 孤儿公理
+    orphans_count = len(r.orphan_axioms)
+    color = "red" if orphans_count > 5 else "yellow" if orphans_count > 0 else "green"
+    tbl.add_row("🕸 孤儿 Axiom", f"[{color}]{orphans_count}[/{color}]")
+
+    # 2. 积压警报
+    backlog_count = len(r.backlog_issues)
+    color = "red" if backlog_count > 0 else "green"
+    tbl.add_row("⏳ 积压警报 (>10d)", f"[{color}]{backlog_count}[/{color}]")
+
+    # 3. 元数据缺陷
+    meta_count = len(r.meta_issues)
+    color = "yellow" if meta_count > 0 else "green"
+    tbl.add_row("🏷 元数据缺失", f"[{color}]{meta_count}[/{color}]")
+
+    # 详情摘要（如果有孤儿 Axiom，列出前 3 个）
+    if r.orphan_axioms:
+        tbl.add_row("─" * 12, "─" * 8)
+        for name in r.orphan_axioms[:3]:
+            short_name = name.replace("Axiom -", "").strip()[:20]
+            tbl.add_row(f"  • {short_name}", "", style="dim")
+        if len(r.orphan_axioms) > 3:
+            tbl.add_row(f"    ...等 {len(r.orphan_axioms)-3} 条", "", style="dim")
+
+    return Panel(tbl, title="[bold]🛡 知识库健康 (Auditor)[/bold]", border_style="white")
+
+
 # ── 完整仪表盘渲染 ────────────────────────────────────────────────
 
 def render(r: StatsReport):
     console.clear()
     console.print(build_health_panel(r))
 
-    # 中间行：Pipeline + 分数 + Cron 三列
+    # 中间行：Pipeline + 分数 + Cron + Audit 四列
     console.print(Columns([
         build_pipeline_table(r),
         build_score_panel(r),
         build_cron_panel(r),
+        build_audit_panel(r),
     ], expand=True))
 
     console.print(build_recent_table(r))

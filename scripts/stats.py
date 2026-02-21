@@ -10,7 +10,7 @@ from pathlib import Path
 from datetime import datetime, timedelta
 from collections import defaultdict, Counter
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Optional, List, Dict
 
 # ── 路径 ─────────────────────────────────────────────────────────
 _ROOT         = Path(__file__).parent.parent
@@ -71,6 +71,11 @@ class StatsReport:
     bottleneck:     str   = ""      # 描述当前瓶颈
     generated_at:   str   = ""
 
+    # ── 审计数据 (Knowledge Auditor) ─────────────────────────────
+    orphan_axioms:  list[str] = field(default_factory=list)
+    backlog_issues: list[dict] = field(default_factory=list)
+    meta_issues:    list[str] = field(default_factory=list)
+
 
 # ── 内部工具 ──────────────────────────────────────────────────────
 
@@ -94,12 +99,9 @@ def _parse_bouncer_log() -> list[CronRun]:
         return runs
 
     content = BOUNCER_LOG.read_text(encoding="utf-8", errors="ignore")
-
-    # 匹配日志中的启动行和结果行
-    # 格式示例（根据实际日志结构做正则）
     scanned_re = re.compile(r"本次共审查\s*(\d+)\s*篇")
     golden_re  = re.compile(r"高认知密度文章:\s*(\d+)")
-    # 用文件 mtime 作为近似时间（更简单可靠）
+    
     try:
         mtime = datetime.fromtimestamp(BOUNCER_LOG.stat().st_mtime)
         scanned = int((scanned_re.search(content) or type('', (), {'group': lambda s, x: '0'})()).group(1))
@@ -107,12 +109,10 @@ def _parse_bouncer_log() -> list[CronRun]:
         runs.append(CronRun(agent="bouncer", time=mtime, scanned=scanned, golden=golden))
     except Exception:
         pass
-
     return runs
 
 
 def _parse_inbox_log() -> list[CronRun]:
-    """从 inbox_processor.log 提取历史。"""
     runs = []
     log_path = LOG_DIR / "inbox_processor.log"
     if not log_path.exists():
@@ -129,7 +129,7 @@ def _parse_inbox_log() -> list[CronRun]:
 
 def collect() -> StatsReport:
     report = StatsReport(generated_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
-    today  = datetime.now().strftime("%Y-%m-%d")
+    today_str  = datetime.now().strftime("%Y-%m-%d")
 
     # ── 1. 扫描 Inbox 笔记 ────────────────────────────────────────
     notes: list[NoteRecord] = []
@@ -137,18 +137,17 @@ def collect() -> StatsReport:
     def _scan_dir(d: Path):
         for f in d.iterdir():
             if f.is_dir():
-                _scan_dir(f)          # 递归处理日期子文件夹
+                _scan_dir(f)
             elif f.suffix == ".md":
                 try:
-                    content = f.read_text(encoding="utf-8")
+                    content = f.read_text(encoding="utf-8", errors="ignore")
                     fm      = _parse_frontmatter(content)
                     if not fm:
                         continue
-                    # 只统计 Bouncer/Clip 产生的笔记
+                        
                     tags = fm.get("tags", [])
-                    if isinstance(tags, str):
-                        tags = [tags]
-                    if not any(t in tags for t in ["BouncerDump", "WebClip"]):
+                    if isinstance(tags, str): tags = [tags]
+                    if not any(t in tags for t in ["BouncerDump", "WebClip", "PDFIngested"]):
                         continue
 
                     notes.append(NoteRecord(
@@ -176,9 +175,7 @@ def collect() -> StatsReport:
     report.pending = status_counter.get("pending", 0)
     report.done    = status_counter.get("done", 0)
     report.error   = status_counter.get("error", 0)
-    report.clips_today = sum(
-        1 for n in notes if n.is_clip and n.created == today
-    )
+    report.clips_today = sum(1 for n in notes if n.is_clip and n.created == today_str)
 
     # ── 3. 分数分布 ───────────────────────────────────────────────
     buckets = {"9-10": 0, "8-9": 0, "7-8": 0, "<7": 0}
@@ -199,50 +196,51 @@ def collect() -> StatsReport:
             daily_inbox[n.created] += 1
         if n.processed_at and n.processed_at[:10] in days7:
             daily_done[n.processed_at[:10]] += 1
-    report.daily_inbox   = {d: daily_inbox[d] for d in days7}
-    report.daily_done    = {d: daily_done[d]  for d in days7}
-    report.throughput_7day = [daily_done[d] for d in days7]
+            
     report.bouncer_7day    = [daily_inbox[d] for d in days7]
+    report.throughput_7day = [daily_done[d] for d in days7]
 
     # ── 5. Cron 最后运行时间 ──────────────────────────────────────
     bouncer_runs = _parse_bouncer_log()
     inbox_runs   = _parse_inbox_log()
-    if bouncer_runs:
-        report.last_bouncer_run = bouncer_runs[-1].time
-    if inbox_runs:
-        report.last_inbox_run = inbox_runs[-1].time
+    if bouncer_runs: report.last_bouncer_run = bouncer_runs[-1].time
+    if inbox_runs:   report.last_inbox_run   = inbox_runs[-1].time
 
-    # ── 6. 系统健康评分（简单规则引擎）──────────────────────────
+    # ── 6. 运行 Knowledge Auditor ──────────────────────────────
+    try:
+        from agents.knowledge_auditor.auditor import Auditor
+        auditor = Auditor(VAULT)
+        report.orphan_axioms = auditor.audit_orphans()
+        report.backlog_issues = auditor.audit_backlog()
+        report.meta_issues = auditor.audit_metadata()
+    except Exception as e:
+        print(f"  ⚠️ Auditor integration failed: {e}")
+
+    # ── 7. 系统健康评分 ──────────────────────────────────────────
     health = 100.0
     bottlenecks = []
 
-    # 规则1：error 率超 10% 扣分
     if report.total > 0:
         err_rate = report.error / report.total
         if err_rate > 0.1:
             health -= 20
-            bottlenecks.append(f"❌ Error 率 {err_rate:.0%}（>{10}%）")
+            bottlenecks.append(f"❌ Error 率 {err_rate:.0%}")
 
-    # 规则2：pending 积压超 20 条
-    if report.pending > 20:
+    if report.pending > 20: 
         health -= 15
         bottlenecks.append(f"⏳ Pending 积压 {report.pending} 条")
 
-    # 规则3：Bouncer 超过 25 小时未运行
+    if report.orphan_axioms:
+        penalty = min(15, len(report.orphan_axioms) * 2)
+        health -= penalty
+        bottlenecks.append(f"🕸 知识孤岛 ({len(report.orphan_axioms)})")
+
     if report.last_bouncer_run:
         idle_h = (datetime.now() - report.last_bouncer_run).total_seconds() / 3600
-        if idle_h > 25:
+        if idle_h > 26:
             health -= 20
             bottlenecks.append(f"🔇 Bouncer 已 {idle_h:.0f}h 未运行")
-    else:
-        health -= 10
-        bottlenecks.append("🔇 无 Bouncer 运行记录")
-
-    # 规则4：7天内总产出为 0
-    if report.total == 0:
-        health -= 30
-        bottlenecks.append("📭 Inbox 为空，Pipeline 未启动")
-
+            
     report.health_score = max(0.0, health)
     report.bottleneck   = bottlenecks[0] if bottlenecks else "✅ 系统运行正常"
 
