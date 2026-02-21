@@ -1,75 +1,68 @@
 ---
 name: vault_query
-description: 查询和搜索 Hugh 的 Obsidian Vault（AINotes 知识库）。支持全文搜索笔记、读取特定 Axiom 或 Project 文档、查看 Inbox 状态、列出待处理高分文章。激活条件：用户询问"我的笔记里有没有关于..."、"帮我找 Axiom-xxx"、"Inbox 现在有多少 pending"、"最近入库了什么"等。
+description: "**[MANDATORY TOOL]** Hugh 的 Obsidian 个人知识库查询工具。当用户问及「我的笔记」「知识库」「有没有关于X的笔记/公理/记录」「Inbox里有什么」「pending了多少」时，必须调用此脚本获取真实数据——严禁凭记忆臆造答案。脚本路径: python3 /Users/hugh/Desktop/Antigravity/skills/vault_query/vault_query.py"
 ---
 
-# Vault Query Skill
+# Vault Query Skill（MANDATORY — 禁止跳过）
 
-Hugh 的 Obsidian AINotes Vault 的查询接口。通过此 Skill，你可以实时访问 Hugh 的第二大脑。
+> **⚠️ 重要规则**：凡是涉及 Hugh 的笔记、Obsidian、知识库、Axiom、Inbox 的问题，**必须先运行下方命令获取真实数据**，严禁凭 LLM 记忆或上下文猜测回答。
 
-## Vault 结构
+## 脚本路径
+
+```
+/Users/hugh/Desktop/Antigravity/skills/vault_query/vault_query.py
+```
+
+## 调用方式（直接在 bash 中运行）
+
+```bash
+# 1. 全文搜索笔记（最常用）
+python3 /Users/hugh/Desktop/Antigravity/skills/vault_query/vault_query.py search "架构"
+python3 /Users/hugh/Desktop/Antigravity/skills/vault_query/vault_query.py search "Agent 系统设计"
+
+# 2. 读取某篇笔记全文（模糊文件名匹配）
+python3 /Users/hugh/Desktop/Antigravity/skills/vault_query/vault_query.py get "认知架构地图"
+python3 /Users/hugh/Desktop/Antigravity/skills/vault_query/vault_query.py get "工具是 Agent 的感官"
+
+# 3. 查看 Inbox 待处理队列
+python3 /Users/hugh/Desktop/Antigravity/skills/vault_query/vault_query.py pending
+
+# 4. 列出所有 Axiom 公理
+python3 /Users/hugh/Desktop/Antigravity/skills/vault_query/vault_query.py axioms
+
+# 5. Inbox 状态统计
+python3 /Users/hugh/Desktop/Antigravity/skills/vault_query/vault_query.py stats
+
+# 6. 最近入库的笔记
+python3 /Users/hugh/Desktop/Antigravity/skills/vault_query/vault_query.py recent 10
+```
+
+## 触发场景（这些情况必须调用）
+
+| 用户说 | 必须调用 |
+|--------|---------|
+| "我的笔记里有没有关于X的？" | `search "X"` |
+| "帮我搜索/找一下..." | `search "..."` |
+| "有没有关于X的公理/Axiom？" | `search "X"` 或 `axioms` |
+| "Inbox 里有什么？" / "pending 了多少？" | `pending` 或 `stats` |
+| "最近抓到了什么文章？" | `recent 10` |
+| "帮我看 XXX 这篇笔记" | `get "XXX"` |
+| "所有 Axiom 是什么？" | `axioms` |
+
+## Vault 结构（供参考）
 
 ```
 /Users/hugh/Documents/Obsidian/AINotes/
-├── 000 认知架构地图.md        核心认知地图（所有 Axiom 的 MOC）
-├── Axiom - *.md              公理笔记（第一性原理）
-├── 00_Inbox/                 信息入库区（Bouncer/Clip/PDF 产出）
-│   ├── *.md                  带 status: pending/done 的笔记
-│   └── YYYY-MM-DD/           归档子文件夹
-├── Projects/                 项目文档
-└── Protocol-*/Framework-*    方法论笔记
+├── 000 认知架构地图.md     → 核心 MOC，包含所有 Axiom 引用
+├── Axiom - *.md           → 公理笔记（第一性原理）
+├── 00_Inbox/              → Bouncer/WebClip/PDF 产出
+│   └── YYYY-MM-DD/Archive/ → 归档子文件夹
+└── Projects/              → 项目文档
 ```
 
-## 使用方法
+## 重要说明
 
-所有命令通过 `python3` 调用：
-
-```bash
-SCRIPT="/Users/hugh/Desktop/Antigravity/skills/vault_query/vault_query.py"
-
-# 全文搜索（文件名 + 正文，按命中数排序）
-python3 $SCRIPT search "Agent 架构"
-python3 $SCRIPT search "LLM 推理 System2"
-
-# 读取特定笔记（模糊文件名匹配）
-python3 $SCRIPT get "认知架构地图"
-python3 $SCRIPT get "Axiom - 工具是 Agent 的感官"
-python3 $SCRIPT get "Daily Briefing"
-
-# 查看 Inbox 待处理队列（按分数排序）
-python3 $SCRIPT pending
-python3 $SCRIPT pending --limit 5
-
-# 列出所有 Axiom 公理（含摘要）
-python3 $SCRIPT axioms
-
-# Inbox 状态快照
-python3 $SCRIPT stats
-
-# 最近入库的笔记
-python3 $SCRIPT recent
-python3 $SCRIPT recent 10
-```
-
-## 典型对话场景
-
-| 用户说 | Pi 应该调用 |
-|--------|------------|
-| "我笔记里有没有关于 Agent 的内容？" | `search "Agent"` |
-| "帮我找工具与本能那条公理" | `get "工具是 Agent 的感官"` |
-| "Inbox 现在有多少待处理的？" | `pending` 或 `stats` |
-| "最近 Bouncer 抓到了什么好文章？" | `recent 10` |
-| "帮我看一下认知架构地图" | `get "000 认知架构地图"` |
-| "列出我所有的公理" | `axioms` |
-
-## 环境变量
-
-| 变量 | 默认值 |
-|------|--------|
-| `OBSIDIAN_VAULT` | `/Users/hugh/Documents/Obsidian/AINotes` |
-
-## 输出格式说明
-
-- 搜索结果包含：标题、文件路径、关键词上下文摘要
-- 笔记全文会截断至 4000 字符（防止 token 爆炸）
-- 所有输出为 Markdown 格式，适合直接回复 Telegram
+- 搜索结果按命中次数排序，文件名匹配权重 ×3
+- 笔记全文最多返回 4000 字符
+- Vault 路径固定为 `/Users/hugh/Documents/Obsidian/AINotes`
+- **不要用 find/ls 自行搜索 Vault，用此脚本效率更高且输出格式更好**
