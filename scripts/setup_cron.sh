@@ -36,6 +36,9 @@ CRON_BRIEFING="50 7 * * *  cd $ROOT && PYTHONPATH=$ROOT $PYTHON agents/daily_bri
 # 08:00 - Cognitive Bouncer：RSS 扫描 + 评分 + 写 Inbox
 CRON_BOUNCER="0 8 * * *   cd $ROOT && PYTHONPATH=$ROOT $PYTHON agents/cognitive_bouncer/bouncer.py >> $LOG_DIR/bouncer.log 2>&1"
 
+# 09:00 每周一 - Knowledge Auditor：知识库审计周报
+CRON_AUDIT="0 9 * * 1    cd $ROOT && PYTHONPATH=$ROOT $PYTHON agents/knowledge_auditor/auditor.py >> $LOG_DIR/auditor.log 2>&1"
+
 # 10:30 - Inbox Processor：NotebookLM 合成 + 归档 + 通知
 CRON_INBOX="30 10 * * *  cd $ROOT && PYTHONPATH=$ROOT $PYTHON agents/inbox_processor/inbox_processor.py >> $LOG_DIR/inbox_processor.log 2>&1"
 
@@ -46,11 +49,12 @@ CRON_SYNTH="0 21 * * 0   cd $ROOT && PYTHONPATH=$ROOT $PYTHON agents/axiom_synth
 TMPFILE=$(mktemp)
 
 crontab -l 2>/dev/null | grep -v -E \
-    "bouncer\.py|inbox_processor\.py|daily_briefing\.py|synthesizer\.py" \
+    "bouncer\.py|inbox_processor\.py|daily_briefing\.py|synthesizer\.py|auditor\.py" \
     > "$TMPFILE" || true
 
 echo "$CRON_BRIEFING" >> "$TMPFILE"
 echo "$CRON_BOUNCER"  >> "$TMPFILE"
+echo "$CRON_AUDIT"    >> "$TMPFILE"
 echo "$CRON_INBOX"    >> "$TMPFILE"
 echo "$CRON_SYNTH"    >> "$TMPFILE"
 
