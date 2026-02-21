@@ -13,61 +13,31 @@ Antigravity OS 的 Obsidian 读写工具。
   - update_frontmatter()    → 更新 YAML frontmatter 中的字段
   - create_axiom()          → 按标准格式创建 Axiom 正式笔记
 
-默认 Vault：/Users/hugh/Documents/Obsidian/AINotes
-通过环境变量 OBSIDIAN_VAULT 覆盖。
+配置通过 agos.config 统一管理。
 """
 
-import os
 import re
-import yaml
-import glob
 from pathlib import Path
 from datetime import datetime
 from typing import Optional
 
+from agos.config import vault_path, inbox_folder as _inbox_folder
+from agos.frontmatter import parse_frontmatter, build_content
+
+# ── 兼容别名（供旧代码 from bridge import _parse_frontmatter 过渡）──
+_parse_frontmatter = parse_frontmatter
+_build_content = build_content
+
 # ── 配置 ──────────────────────────────────────────────────────────
-DEFAULT_VAULT = "/Users/hugh/Documents/Obsidian/AINotes"
-INBOX_FOLDER  = "00_Inbox"
+INBOX_FOLDER = _inbox_folder()
 
 def get_vault() -> Path:
-    vault = os.getenv("OBSIDIAN_VAULT", DEFAULT_VAULT)
-    return Path(vault)
+    return vault_path()
 
 def get_inbox() -> Path:
     return get_vault() / INBOX_FOLDER
 
 # ── 内部工具 ──────────────────────────────────────────────────────
-
-def _parse_frontmatter(content: str) -> tuple[dict, str]:
-    """
-    拆分 YAML frontmatter 和正文。
-    Returns: (frontmatter_dict, body_str)
-    """
-    if not content.startswith("---"):
-        return {}, content
-
-    end = content.find("\n---", 3)
-    if end == -1:
-        return {}, content
-
-    yaml_str = content[3:end].strip()
-    body     = content[end + 4:].lstrip("\n")
-
-    try:
-        fm = yaml.safe_load(yaml_str) or {}
-    except yaml.YAMLError:
-        fm = {}
-
-    return fm, body
-
-
-def _build_content(frontmatter: dict, body: str) -> str:
-    """把 frontmatter dict + body 重新组合成完整笔记字符串。"""
-    if not frontmatter:
-        return body
-    fm_str = yaml.dump(frontmatter, allow_unicode=True, default_flow_style=False).rstrip()
-    return f"---\n{fm_str}\n---\n\n{body}"
-
 
 def _resolve_path(path: str) -> Path:
     """
@@ -79,11 +49,9 @@ def _resolve_path(path: str) -> Path:
     p = Path(path)
     if p.is_absolute():
         return p
-    # 如果 path 以 00_Inbox 或其他文件夹开头，直接拼 vault
     full = get_vault() / p
     if full.exists():
         return full
-    # 降级到 Inbox
     return get_inbox() / p
 
 # ── 公开 API ──────────────────────────────────────────────────────
@@ -121,8 +89,10 @@ def append_note(path: str, text: str) -> bool:
     return True
 
 
-def list_notes(folder: str = INBOX_FOLDER, pattern: str = "*.md") -> list[Path]:
+def list_notes(folder: str = None, pattern: str = "*.md") -> list[Path]:
     """列出指定文件夹下的所有 Markdown 笔记。"""
+    if folder is None:
+        folder = INBOX_FOLDER
     base = get_vault() / folder
     if not base.exists():
         print(f"  [obsidian_bridge] 文件夹不存在: {base}")
@@ -136,14 +106,14 @@ def get_frontmatter(path: str) -> dict:
     content = read_note(path)
     if content is None:
         return {}
-    fm, _ = _parse_frontmatter(content)
+    fm, _ = parse_frontmatter(content)
     return fm
 
 
 def update_frontmatter(path: str, updates: dict) -> bool:
     """
     更新笔记的 YAML frontmatter（仅修改指定字段，不动正文）。
-    
+
     示例：
         update_frontmatter("00_Inbox/Bouncer - xxx.md", {"status": "done"})
     """
@@ -151,9 +121,9 @@ def update_frontmatter(path: str, updates: dict) -> bool:
     if content is None:
         return False
 
-    fm, body = _parse_frontmatter(content)
+    fm, body = parse_frontmatter(content)
     fm.update(updates)
-    new_content = _build_content(fm, body)
+    new_content = build_content(fm, body)
 
     p = _resolve_path(path)
     p.write_text(new_content, encoding="utf-8")
@@ -164,25 +134,25 @@ def update_frontmatter(path: str, updates: dict) -> bool:
 def scan_pending(min_score: float = 8.0) -> list[dict]:
     """
     扫描 00_Inbox 中所有 status: pending 且 score >= min_score 的笔记。
-    
+
     Returns: list of {path, title, score, source, tags}
     """
     results = []
     for note_path in list_notes(INBOX_FOLDER):
         content = note_path.read_text(encoding="utf-8")
-        fm, _ = _parse_frontmatter(content)
+        fm, _ = parse_frontmatter(content)
 
         status = fm.get("status", "")
-        score  = float(fm.get("score", 0))
+        score = float(fm.get("score", 0))
 
         if status == "pending" and score >= min_score:
             results.append({
-                "path":   str(note_path),
-                "title":  fm.get("title", note_path.stem),
-                "score":  score,
+                "path": str(note_path),
+                "title": fm.get("title", note_path.stem),
+                "score": score,
                 "source": fm.get("source", ""),
-                "tags":   fm.get("tags", []),
-                "fm":     fm,
+                "tags": fm.get("tags", []),
+                "fm": fm,
             })
 
     print(f"  📥 [obsidian_bridge] 扫描完成：{len(results)} 条 pending 待处理")
@@ -198,23 +168,22 @@ def create_axiom(
 ) -> str:
     """
     在 Vault 根目录创建一条标准格式的 Axiom 笔记。
-    
+
     Returns: 创建的文件路径（str）
     """
     if tags is None:
         tags = ["Axiom"]
 
-    # 文件名：Axiom - {title}.md
     safe_title = re.sub(r'[\\/*?:"<>|]', "", title)[:80].strip()
-    filename   = f"Axiom - {safe_title}.md"
-    target     = get_vault() / filename
+    filename = f"Axiom - {safe_title}.md"
+    target = get_vault() / filename
 
     today = datetime.now().strftime("%Y-%m-%d")
 
     frontmatter = {
-        "tags":    tags,
+        "tags": tags,
         "created": today,
-        "source":  source_url,
+        "source": source_url,
     }
     body = f"""# {title}
 
@@ -229,21 +198,23 @@ def create_axiom(
 
 - [[000 认知架构地图]]
 """
-    content = _build_content(frontmatter, body)
+    content = build_content(frontmatter, body)
     write_note(str(target), content)
     return str(target)
 
 
-def move_to_dated_folder(path: str, base_folder: str = INBOX_FOLDER) -> Optional[str]:
+def move_to_dated_folder(path: str, base_folder: str = None) -> Optional[str]:
     """
     将 Inbox 中的文件移动到按日期归档的子文件夹。
     例如：00_Inbox/note.md → 00_Inbox/2026-02-21/note.md
     """
+    if base_folder is None:
+        base_folder = INBOX_FOLDER
     src = _resolve_path(path)
     if not src.exists():
         return None
 
-    today  = datetime.now().strftime("%Y-%m-%d")
+    today = datetime.now().strftime("%Y-%m-%d")
     dst_dir = get_vault() / base_folder / today
     dst_dir.mkdir(parents=True, exist_ok=True)
     dst = dst_dir / src.name

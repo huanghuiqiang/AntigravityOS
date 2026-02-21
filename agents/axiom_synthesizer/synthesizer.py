@@ -5,85 +5,72 @@ Antigravity OS  |  Axiom Synthesizer Agent
 
 职责：
   1. 扫描 Obsidian Inbox，收集所有已有 axiom_extracted 的笔记
-     （包含 done / pending / BouncerDump / WebClip）
   2. 将碎片公理提交给 LLM，做：去重 → 分类 → 命名 → 排序
-  3. 生成新的 Axiom 候选条目（markdown 格式，符合认知地图规范）
-  4. 更新 `000 认知架构地图.md`：在 Layer 1 末尾追加新发现的 Axiom
+  3. 生成新的 Axiom 候选条目
+  4. 更新 `000 认知架构地图.md`
   5. 可选：为每条新 Axiom 创建独立笔记文件
   6. Telegram 推送合成结果摘要
 
 触发方式：
-  - 手动：PYTHONPATH=. python agents/axiom_synthesizer/synthesizer.py
-  - 建议频率：每周一次（周日晚），在 inbox_processor 之后
+  - 手动：python -m agents.axiom_synthesizer.synthesizer
+  - 建议频率：每周一次（周日晚）
 
 注意：
   - 本脚本是**只追加**的——不会删除或修改地图已有条目
   - 已存在于地图中的 Axiom 标题会被自动跳过（幂等）
 """
 
-import os
 import re
-import sys
 import json
 import argparse
-import requests
+import httpx
 from pathlib import Path
 from datetime import datetime
-from typing import Optional
 
-# ── 路径 ─────────────────────────────────────────────────────────
-_THIS_DIR = Path(__file__).parent
-_ROOT     = _THIS_DIR.parent.parent
-sys.path.insert(0, str(_ROOT))
-
-from dotenv import load_dotenv
-load_dotenv(_ROOT / "agents/cognitive_bouncer/.env")
+from agos.config import (
+    openrouter_api_key, vault_path, inbox_folder,
+    min_score_threshold, model_synthesizer, synth_max_batch,
+)
+from agos.notify import send_message
+from agos.frontmatter import parse_frontmatter
 
 from skills.obsidian_bridge.bridge import (
     get_vault, list_notes, read_note, write_note, append_note,
-    _parse_frontmatter,
+    update_frontmatter,
 )
 
-_BOUNCER_DIR = _ROOT / "agents/cognitive_bouncer"
-sys.path.insert(0, str(_BOUNCER_DIR))
-from telegram_notify import send_message
-
 # ── 配置 ─────────────────────────────────────────────────────────
-OPENROUTER_KEY   = os.getenv("GEMINI_API_KEY", "")
-MODEL            = "google/gemini-pro-1.5"
-MAP_FILE         = "000 认知架构地图.md"
-INBOX_FOLDER     = "00_Inbox"
-MIN_AXIOM_SCORE  = float(os.getenv("SYNTH_MIN_SCORE", "8.0"))
-MAX_AXIOMS_BATCH = int(os.getenv("SYNTH_MAX_BATCH", "40"))   # 既然是手动执行，可以稍微加大 Batch
+MAP_FILE = "000 认知架构地图.md"
+INBOX_FOLDER = inbox_folder()
+MIN_AXIOM_SCORE = min_score_threshold()
+MAX_AXIOMS_BATCH = synth_max_batch()
 
 
 # ── Step 1: 收集碎片公理 ─────────────────────────────────────────
 
 def collect_raw_axioms() -> list[dict]:
     """
-    扫描 Inbox（含子文件夹）+ Vault 根目录中所有 BouncerDump / WebClip 笔记，
+    扫描 Inbox 中所有 BouncerDump / WebClip 笔记，
     提取 [!abstract] callout 中的公理文本。
-    
-    新增：跳过已打标 synthesized: true 的笔记。
+    跳过已打标 synthesized: true 的笔记。
     """
-    vault     = get_vault()
+    vault = get_vault()
     inbox_dir = vault / INBOX_FOLDER
-    raw       = []
+    raw = []
     seen_axioms: set[str] = set()
 
     def _try_extract(f: Path):
         try:
             content = f.read_text(encoding="utf-8")
-            fm, body = _parse_frontmatter(content)
-            
-            # 【核心优化】增量逻辑：跳过已合成笔记
+            fm, body = parse_frontmatter(content)
+
+            # 增量逻辑：跳过已合成笔记
             if fm.get("synthesized") is True:
                 return
 
             tags = fm.get("tags", [])
             if isinstance(tags, str):
                 tags = [tags]
-            # 只采集 Bouncer/Clip 产生的笔记（不限 status）
             if not any(t in tags for t in ["BouncerDump", "WebClip", "PDFIngested"]):
                 return
             score = float(fm.get("score", 0))
@@ -114,11 +101,11 @@ def collect_raw_axioms() -> list[dict]:
             seen_axioms.add(key)
 
             raw.append({
-                "axiom":  axiom,
-                "score":  score,
+                "axiom": axiom,
+                "score": score,
                 "source": str(fm.get("source", "")),
-                "title":  str(fm.get("title", f.stem)),
-                "path":   str(f)  # 记录路径用于后续打标
+                "title": str(fm.get("title", f.stem)),
+                "path": str(f)
             })
         except Exception:
             pass
@@ -139,7 +126,6 @@ def collect_raw_axioms() -> list[dict]:
 
 def mark_as_synthesized(paths: list[str]):
     """将已提取公理的笔记打上 synthesized: true 标记。"""
-    from skills.obsidian_bridge.bridge import update_frontmatter
     print(f"  标记 {len(paths)} 条笔记为已合成...")
     for p in paths:
         update_frontmatter(p, {"synthesized": True})
@@ -148,7 +134,6 @@ def mark_as_synthesized(paths: list[str]):
 # ── Step 2: 读取现有地图（防止重复追加）────────────────────────
 
 def read_map() -> str:
-    """读取 000 认知架构地图.md 全文。"""
     map_path = get_vault() / MAP_FILE
     if map_path.exists():
         return map_path.read_text(encoding="utf-8")
@@ -156,8 +141,6 @@ def read_map() -> str:
 
 
 def extract_existing_axiom_titles(map_content: str) -> set[str]:
-    """从地图内容中提取所有已引用的 Axiom 标题（用于去重）。"""
-    # 匹配 [[Axiom - xxx]] 格式
     return set(re.findall(r"\[\[Axiom - ([^\]]+)\]\]", map_content))
 
 
@@ -166,19 +149,18 @@ def extract_existing_axiom_titles(map_content: str) -> set[str]:
 SYNTHESIS_PROMPT = """
 你是 Antigravity OS 的"认知蒸馏师"。你的任务是对收集到的碎片公理做：
 
-1. **语义去重**：合并表达相同底层规律的公理（保留信息密度最高的版本）
+1. **语义去重**：合并表达相同底层规律的公理
 2. **提升抽象层**：将过于具体的描述升华为可复用的"第一性原理"
 3. **命名规范化**：每条公理采用格式 `公理名称 (副标题/关键词)`
 4. **排序**：按"认知密度"从高到低排列
 
 输出格式必须是合法的 JSON 数组，每个元素包含：
-{{"name": "简洁的英文/中文公理名称 (关键词)", "meaning": "一句话：这条公理的底层规律是什么，为什么重要", "sources": ["来源标题1", "来源标题2"], "is_new": true}}
+{{"name": "简洁的英文/中文公理名称 (关键词)", "meaning": "一句话：这条公理的底层规律是什么", "sources": ["来源标题1"], "is_new": true}}
 
 重要约束：
-- 只返回 JSON 数组，不要任何 Markdown 包裹或额外解释
+- 只返回 JSON 数组，不要任何 Markdown 包裹
 - 最多输出 8 条（优中选优）
 - 如果碎片中没有任何值得提炼的新公理，返回空数组 []
-- 公理应该是"反共识的工程洞察"，不是常识
 
 以下是已存在于认知地图中的公理（请勿重复）：
 {existing}
@@ -187,15 +169,13 @@ SYNTHESIS_PROMPT = """
 {raw_axioms}
 """
 
+
 def synthesize_with_llm(raw_axioms: list[dict], existing_titles: set[str]) -> tuple[list[dict], list[str]]:
-    """
-    提交碎片公理给 LLM，返回 (提炼结果列表, 已处理的文件路径列表)。
-    """
-    if not OPENROUTER_KEY:
-        print("  ❌ 未找到 GEMINI_API_KEY")
+    api_key = openrouter_api_key()
+    if not api_key:
+        print("  ❌ 未找到 API Key")
         return [], []
 
-    # 去重 + 截断，避免超长 context
     unique_axioms = []
     seen = set()
     for a in raw_axioms:
@@ -206,10 +186,10 @@ def synthesize_with_llm(raw_axioms: list[dict], existing_titles: set[str]) -> tu
 
     batch = unique_axioms[:MAX_AXIOMS_BATCH]
     processed_paths = [a["path"] for a in batch if "path" in a]
-    
-    print(f"  🧠 提交 {len(batch)} 条碎片给 Gemini 2.0 Flash 合成...")
 
-    # 构造简化的 batch 传给 LLM（省 token）
+    model = model_synthesizer()
+    print(f"  🧠 提交 {len(batch)} 条碎片给 {model} 合成...")
+
     llm_batch = [{"axiom": a["axiom"], "title": a["title"]} for a in batch]
 
     prompt = SYNTHESIS_PROMPT.format(
@@ -218,28 +198,28 @@ def synthesize_with_llm(raw_axioms: list[dict], existing_titles: set[str]) -> tu
     )
 
     try:
-        resp = requests.post(
-            "https://openrouter.ai/api/v1/chat/completions",
-            headers={
-                "Authorization": f"Bearer {OPENROUTER_KEY}",
-                "Content-Type":  "application/json",
-                "HTTP-Referer":  "https://github.com/huanghuiqiang/AntigravityOS",
-                "X-Title":       "Antigravity Axiom Synthesizer",
-            },
-            json={
-                "model":    MODEL,
-                "messages": [{"role": "user", "content": prompt}],
-                "response_format": {"type": "json_object"},
-            },
-            timeout=60.0,
-        )
+        with httpx.Client(timeout=60.0) as client:
+            resp = client.post(
+                "https://openrouter.ai/api/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                    "HTTP-Referer": "https://github.com/huanghuiqiang/AntigravityOS",
+                    "X-Title": "Antigravity Axiom Synthesizer",
+                },
+                json={
+                    "model": model,
+                    "messages": [{"role": "user", "content": prompt}],
+                    "response_format": {"type": "json_object"},
+                },
+            )
 
         if resp.status_code != 200:
             print(f"  ❌ LLM 响应异常: HTTP {resp.status_code}")
             return [], []
 
         raw_out = resp.json()["choices"][0]["message"]["content"]
-        clean   = raw_out.strip().lstrip("```json").lstrip("```").rstrip("```").strip()
+        clean = raw_out.strip().lstrip("```json").lstrip("```").rstrip("```").strip()
 
         parsed = json.loads(clean)
         if isinstance(parsed, dict):
@@ -261,20 +241,13 @@ def synthesize_with_llm(raw_axioms: list[dict], existing_titles: set[str]) -> tu
 # ── Step 4: 更新认知地图 ─────────────────────────────────────────
 
 def update_map(synthesized: list[dict], dry_run: bool = False) -> list[str]:
-    """
-    将合成结果追加到 000 认知架构地图.md 的 Layer 1 末尾。
-    只追加，不修改已有内容（幂等）。
-
-    Returns: 实际写入的公理名称列表
-    """
     if not synthesized:
         return []
 
-    map_path    = get_vault() / MAP_FILE
+    map_path = get_vault() / MAP_FILE
     map_content = read_map()
-    existing    = extract_existing_axiom_titles(map_content)
+    existing = extract_existing_axiom_titles(map_content)
 
-    # 过滤掉已存在的
     new_ones = [
         a for a in synthesized
         if a.get("is_new", True)
@@ -288,22 +261,20 @@ def update_map(synthesized: list[dict], dry_run: bool = False) -> list[str]:
         print("  ℹ️  所有合成公理已存在于地图，无需追加")
         return []
 
-    # 构建追加内容
-    today      = datetime.now().strftime("%Y-%m-%d")
-    num_start  = len(re.findall(r"^\d+\.\s+\*\*", map_content, re.MULTILINE)) + 1
-    new_lines  = [
+    today = datetime.now().strftime("%Y-%m-%d")
+    num_start = len(re.findall(r"^\d+\.\s+\*\*", map_content, re.MULTILINE)) + 1
+    new_lines = [
         f"\n\n---\n\n## 🆕 Synthesizer 追加 ({today})\n"
         f"> 由 Axiom Synthesizer 从 Bouncer 输出中自动提炼\n"
     ]
 
     written = []
     for i, axiom in enumerate(new_ones, num_start):
-        name    = axiom.get("name", "未命名公理")
+        name = axiom.get("name", "未命名公理")
         meaning = axiom.get("meaning", "")
         sources = axiom.get("sources", [])
         src_str = "、".join(sources[:3]) if sources else ""
 
-        # 格式：与 Layer 1 一致
         entry = (
             f"{i}. **{name}**: [[Axiom - {name}]]\n"
             f"    *   *Meaning*: {meaning}\n"
@@ -321,7 +292,6 @@ def update_map(synthesized: list[dict], dry_run: bool = False) -> list[str]:
         print(append_block)
         return written
 
-    # 追加到文件末尾
     with map_path.open("a", encoding="utf-8") as f:
         f.write(append_block)
 
@@ -329,26 +299,23 @@ def update_map(synthesized: list[dict], dry_run: bool = False) -> list[str]:
     return written
 
 
-# ── Step 5: 可选——为每条新 Axiom 创建独立笔记 ──────────────────
+# ── Step 5: 为每条新 Axiom 创建独立笔记 ──────────────────
 
 def create_axiom_notes(synthesized: list[dict], dry_run: bool = False) -> list[str]:
-    """
-    为每条新公理在 Vault 根目录创建独立 Axiom 笔记（如不存在）。
-    """
     created = []
     for axiom in synthesized:
-        name    = axiom.get("name", "")
+        name = axiom.get("name", "")
         meaning = axiom.get("meaning", "")
         sources = axiom.get("sources", [])
         if not name:
             continue
 
         safe_name = re.sub(r'[\\/*?:"<>|]', "", name)[:80].strip()
-        filename  = f"Axiom - {safe_name}.md"
+        filename = f"Axiom - {safe_name}.md"
         note_path = get_vault() / filename
 
         if note_path.exists():
-            continue  # 已存在，跳过
+            continue
 
         today = datetime.now().strftime("%Y-%m-%d")
         src_links = "\n".join(f"- {s}" for s in sources) if sources else "- (自动合成)"
@@ -430,11 +397,10 @@ def main(dry_run: bool = False, create_notes: bool = True):
     raw_axioms = collect_raw_axioms()
     if not raw_axioms:
         print("\n⚠️  未收集到有效公理碎片，退出。")
-        print("   提示：确保 Inbox 中有 score ≥ 8.0 的 BouncerDump/WebClip 笔记")
         return
 
     # 2. 读现有地图，防重复
-    map_content     = read_map()
+    map_content = read_map()
     existing_titles = extract_existing_axiom_titles(map_content)
     print(f"  🗺️  认知地图已有 {len(existing_titles)} 条公理")
 
@@ -442,7 +408,6 @@ def main(dry_run: bool = False, create_notes: bool = True):
     synthesized, processed_paths = synthesize_with_llm(raw_axioms, existing_titles)
     if not synthesized:
         print("\n⚠️  LLM 未合成出新公理。")
-        # 即使没出新公理，只要 LLM 处理过了，也把这批标记为 synthesized，防止死循环
         if not dry_run and processed_paths:
             mark_as_synthesized(processed_paths)
         notify([], [], len(raw_axioms), dry_run)
@@ -463,7 +428,7 @@ def main(dry_run: bool = False, create_notes: bool = True):
     # 7. 推送通知
     notify(written, created_notes, len(raw_axioms), dry_run)
 
-    # 7. 汇总输出
+    # 8. 汇总输出
     print("\n" + "=" * 55)
     print(f"✅ 合成完成")
     print(f"   原始碎片:  {len(raw_axioms)} 条")
@@ -476,15 +441,13 @@ def main(dry_run: bool = False, create_notes: bool = True):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Antigravity Axiom Synthesizer")
-    parser.add_argument("--dry-run",      action="store_true",  help="只分析，不写入")
-    parser.add_argument("--no-notes",     action="store_true",  help="不创建独立 Axiom 笔记")
-    parser.add_argument("--min-score",    type=float, default=MIN_AXIOM_SCORE,
-                        help=f"最低采集分数（默认 {MIN_AXIOM_SCORE}）")
-    parser.add_argument("--max-batch",    type=int,   default=MAX_AXIOMS_BATCH,
-                        help=f"最多提交给 LLM 的碎片数（默认 {MAX_AXIOMS_BATCH}）")
+    parser.add_argument("--dry-run", action="store_true", help="只分析，不写入")
+    parser.add_argument("--no-notes", action="store_true", help="不创建独立 Axiom 笔记")
+    parser.add_argument("--min-score", type=float, default=MIN_AXIOM_SCORE)
+    parser.add_argument("--max-batch", type=int, default=MAX_AXIOMS_BATCH)
     args = parser.parse_args()
 
-    MIN_AXIOM_SCORE  = args.min_score
+    MIN_AXIOM_SCORE = args.min_score
     MAX_AXIOMS_BATCH = args.max_batch
 
     main(dry_run=args.dry_run, create_notes=not args.no_notes)

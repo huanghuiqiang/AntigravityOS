@@ -4,150 +4,95 @@
 
 ---
 
+## 🛠 工程化重构 (V2)
+
+系统已完成工程化重构，核心变化：
+1. **统一配置中心** (`agos/config.py`)：消灭硬编码路径，支持 `.env` 灵活配置。
+2. **共享基础设施** (`agos/frontmatter.py`, `agos/notify.py`)：统一 YAML 解析逻辑与 Telegram 推送入口。
+3. **标准包结构**：采用 `pyproject.toml` 管理依赖，支持 `pip install -e .` 安装。
+4. **自动化测试**：引入 `pytest` 覆盖核心逻辑，确保系统稳健。
+
+---
+
 ## 系统架构
 
 ```
 Antigravity OS
 │
-├── core/openClaw/          → Pi 🧊 全局 AI 指挥中枢（Telegram + Cron + LLM Router）
+├── agos/                   → 核心共享包 (Config, Notify, Frontmatter)
 │
-├── skills/                 → 原子化、无状态的能力库
+├── agents/                 → 有状态的任务 Agent
+│   ├── cognitive_bouncer/  → RSS 扫描 → LLM 评分 → Obsidian Inbox
+│   ├── inbox_processor/    → 消费 pending 条目 → NotebookLM 合成 → 归档
+│   ├── axiom_synthesizer/  → 聚合碎片 → 提炼正式 Axiom → 更新地图
+│   ├── daily_briefing/     → 每日早报统计
+│   └── knowledge_auditor/  → 知识库健康审计
+│
+├── skills/                 → 原子化能力库
 │   ├── obsidian_bridge/    → Obsidian Vault CRUD API
-│   ├── notebooklm/         → Google NotebookLM 完整 API
-│   ├── web_clipper/        → URL → 即时评分 → Obsidian 入库
-│   └── global_tools/       → YouTube 字幕提取、PDF 解析等
+│   ├── web_clipper/        → 即时剪报评分
+│   ├── vault_query/        → 自然语言查询 Vault
+│   └── global_tools/       → PDF 解析、YouTube 提取等
 │
-├── agents/                 → 有状态的、定时驱动的任务 Agent
-│   ├── cognitive_bouncer/  → RSS 扫描 → LLM 评分 → Obsidian Inbox [submodule]
-│   └── inbox_processor/    → 消费 pending 条目 → NotebookLM 合成 → 归档
-│
-└── data/obsidian_inbox     → 数据总线（symlink → Obsidian 00_Inbox）
-```
-
----
-
-## 完整数据流（Pipeline）
-
-```
-[手动触发]  clip <URL>  →  web_clipper
-                              ↓ 即时评分（Gemini Flash）
-                              ↓
-[08:00 Cron] cognitive_bouncer  →  RSS 扫描 → 评分
-                              ↓
-              Obsidian 00_Inbox
-              { status: pending, score ≥ 8.0, source, title }
-                              ↓
-[10:30 Cron] inbox_processor  →  notebooklm: study-guide 报告
-                              ↓  update status: done
-                              ↓  归档到 00_Inbox/YYYY-MM-DD/
-                              ↓
-                        Telegram 推送摘要
+└── data/                   → 数据资产
+    ├── obsidian_inbox      → 软链接至 Obsidian 00_Inbox
+    └── logs/               → 统一日志归集
 ```
 
 ---
 
 ## 快速开始
 
-### 环境初始化
+### 1. 环境安装
 
 ```bash
-# 克隆（含 submodule）
-git clone --recurse-submodules git@github.com:huanghuiqiang/AntigravityOS.git
-cd AntigravityOS
+# 推荐使用虚拟环境
+python3 -m venv .venv
+source .venv/bin/activate
 
-# 安装依赖
-pip install pyyaml python-dotenv requests httpx beautifulsoup4 trafilatura
-
-# 配置 API Key（复制 bouncer 的 .env）
-cp agents/cognitive_bouncer/.env.example agents/cognitive_bouncer/.env
-# 填入 GEMINI_API_KEY 和 TELEGRAM_CHAT_ID
+# 安装项目（含开发依赖）
+pip install -e ".[dev]"
 ```
 
-### 安装定时任务
+### 2. 配置
+
+在项目根目录创建 `.env` 文件：
+
+```ini
+# 路径配置
+OBSIDIAN_VAULT="/Users/hugh/Documents/Obsidian/AINotes"
+
+# API Keys
+OPENROUTER_API_KEY="sk-..."
+GEMINI_API_KEY="sk-..." # 兼容旧配置
+
+# Telegram
+TELEGRAM_BOT_TOKEN="..."
+TELEGRAM_CHAT_ID="..."
+```
+
+### 3. 运行测试
 
 ```bash
-chmod +x scripts/setup_cron.sh
-./scripts/setup_cron.sh
-# 08:00 → bouncer, 10:30 → inbox_processor
-```
-
-### 手动触发 Web Clipper
-
-```bash
-# 即时剪报一篇文章
-PYTHONPATH=. python skills/web_clipper/clipper.py "https://example.com/article"
-
-# 也可通过 Telegram 对 Pi 说：
-# clip https://example.com/article
+pytest
 ```
 
 ---
 
-## Skills 目录
+## 核心管道 (Pipeline)
 
-| Skill | 描述 | 状态 |
-|-------|------|------|
-| `obsidian_bridge` | Obsidian Vault 读写 CRUD API | ✅ 完成 |
-| `notebooklm` | NotebookLM 完整 API（notebook/source/generate/download） | ✅ 完成 |
-| `web_clipper` | URL 即时评分入库，无需等 cron | ✅ 完成 |
-| `global_tools/youtube_downloader` | YouTube URL → 字幕文本 | ✅ 完成 |
-| `pdf_ingester` | PDF → 文本提取 → Bouncer 评分管道 | 📋 计划中 |
-
-## Agents 目录
-
-| Agent | 描述 | 状态 |
-|-------|------|------|
-| `cognitive_bouncer` | RSS→LLM 评分→Obsidian，08:00 Cron | ✅ 完成 |
-| `inbox_processor` | pending→NotebookLM→归档, 10:30 Cron | ✅ 完成 |
-| `axiom_synthesizer` | 聚合 done 笔记→提炼新 Axiom→写入认知地图 | 📋 计划中 |
-| `knowledge_auditor` | 扫描孤立笔记、过期 Axiom、生成 Vault 健康报告 | 📋 计划中 |
-| `daily_briefing` | 每日汇总 pending 条目 → Telegram 早报 | 📋 计划中 |
+1. **Bouncer (08:00)**: 巡逻 RSS 订阅源，发现 >8.0 分内容投递至 Inbox。
+2. **Auditor (周一/每4h)**: 检查知识孤岛、积压条目，维持系统熵减。
+3. **Briefing (07:50)**: 推送今日早报，引导重点阅读与提炼。
+4. **Processor (10:30)**: 自动调用 NotebookLM 为高分文章生成深度报告。
 
 ---
 
-## Roadmap
+## 维护者指令
 
-### ✅ Phase 1 — 核心管道（已完成）
-- [x] Cognitive Bouncer：RSS 过滤 + LLM 评分 + Obsidian 投递
-- [x] Obsidian Bridge：Vault CRUD 工具库
-- [x] Inbox Processor：NotebookLM 合成 + 自动归档
-- [x] Telegram 推送集成
-- [x] Cron 流水线（08:00 → 10:30）
-
-### ✅ Phase 2 — 即时触发（当前）
-- [x] Web Clipper：URL → 即时评分 → Inbox（无需等 cron）
-
-### 📋 Phase 3 — 知识提炼闭环
-- [ ] **Axiom Synthesizer**：聚合本周所有 done 笔记，AI 提炼新 Axiom，自动更新 `000 认知架构地图.md`
-- [ ] **PDF Ingester**：PDF → 文本 → 进入 Bouncer 评分管道（补全 global_tools）
-- [ ] **Daily Briefing Agent**：每日 07:50 推送 Inbox 待处理摘要 + 天气
-
-### 📋 Phase 4 — 系统健壮性
-- [ ] **Knowledge Auditor**：定期扫描孤立笔记、检测无链接 Axiom、生成 Vault 健康报告
-- [ ] **Pi 感知 obsidian_bridge**：让 OpenClaw Pi 通过 Telegram 实时问答 Vault 内容
-- [ ] **VPS 部署**：Gateway 迁移到 24/7 在线服务器，Cron 不依赖本机开机
-
----
-
-## 核心依赖
-
-| 工具 | 用途 |
-|------|------|
-| OpenRouter → Gemini 2.0 Flash | LLM 评分（低成本） |
-| OpenRouter → Claude Opus 4 | Pi 主力对话模型 |
-| NotebookLM CLI (`notebooklm-py`) | 深度报告/Podcast 生成 |
-| Obsidian + AINotes Vault | 知识持久化 + 数据总线 |
-| Telegram Bot | 推送通知 + 指令入口 |
-| OpenClaw Gateway | Pi Agent 运行时 |
-
----
-
-## 设计原则
-
-1. **Obsidian 是数据总线**：Agent 间通过 YAML frontmatter 传递状态（`status: pending/done/error`）
-2. **Skills 无状态**：每个 skill 是纯函数，可独立测试，不保存运行时状态
-3. **低 Token 优先**：过滤/评分用 Gemini Flash，合成/对话用 Claude
-4. **自我描述**：每个 skill/agent 有 `SKILL.md` / `README.md`，LLM 可自主读取并调用
+- **添加新 Agent**: 放在 `agents/` 下，引用 `from agos import ...` 获取配置和推送。
+- **添加新原子能力**: 放在 `skills/` 下，确保函数无状态可测试。
+- **修改系统逻辑**: 先在 `tests/` 下编写测试用例。
 
 ---
 

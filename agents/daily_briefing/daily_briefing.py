@@ -4,20 +4,12 @@ daily_briefing.py
 Antigravity OS  |  Daily Briefing Agent
 """
 
-import sys
 import argparse
-from pathlib import Path
 from datetime import datetime, timedelta
-
-_THIS_DIR = Path(__file__).parent
-_ROOT     = _THIS_DIR.parent.parent
-sys.path.insert(0, str(_ROOT))
+from urllib.parse import urlparse
 
 from scripts.stats import collect
-
-_BOUNCER_DIR = _ROOT / "agents/cognitive_bouncer"
-sys.path.insert(0, str(_BOUNCER_DIR))
-from telegram_notify import send_message
+from agos.notify import send_message
 
 
 # ── 格式化工具 ────────────────────────────────────────────────────
@@ -51,14 +43,14 @@ def fmt_cron_time(dt) -> str:
 # ── 报告生成 ──────────────────────────────────────────────────────
 
 def build_report(r) -> str:
-    today     = datetime.now().strftime("%Y-%m-%d")
+    today = datetime.now().strftime("%Y-%m-%d")
     weekday_names = ["月", "火", "水", "木", "金", "土", "日"]
     weekday = weekday_names[datetime.now().weekday()]
 
     # ── 1. 健康分析 & 审计警报 ───────────────────────────────────
     he = health_emoji(r.health_score)
     health_text = f"{he} <b>系统健康度 {r.health_score:.0f}/100</b>"
-    
+
     alerts = []
     if r.orphan_axioms:
         alerts.append(f"🕸 <b>知识孤岛</b>：{len(r.orphan_axioms)} 条公理未被引用")
@@ -66,7 +58,7 @@ def build_report(r) -> str:
         alerts.append(f"⏳ <b>积压警报</b>：{len(r.backlog_issues)} 条已积压超过 10 天")
     if r.error > 0:
         alerts.append(f"❌ <b>损坏条目</b>：共有 {r.error} 条错误笔记待检查")
-    
+
     alert_section = ""
     if alerts:
         alert_section = "\n📢 <b>健康警报</b>\n" + "\n".join(f"  • {a}" for a in alerts) + "\n"
@@ -81,10 +73,10 @@ def build_report(r) -> str:
         f"⏳ Pending <b>{r.pending}</b>  |  "
         f"✅ Done <b>{r.done}</b>",
     ]
-    
+
     if r.bottleneck and r.health_score < 90:
         lines.append(f"⚡ 瓶颈: {r.bottleneck}")
-    
+
     if alert_section:
         lines.append(alert_section)
     else:
@@ -100,11 +92,10 @@ def build_report(r) -> str:
     if today_notes:
         lines.append("🔥 <b>近期高价值入库</b>")
         for n in today_notes:
-            from urllib.parse import urlparse
             medal = score_medal(n.score)
             title = (n.title or n.filename)[:40]
-            host  = urlparse(n.source).netloc[:20] if n.source else "─"
-            lines.append(f"  {medal} [{n.score:.1f}] <a href=\"{n.source}\">{title}</a> <code>{host}</code>")
+            host = urlparse(n.source).netloc[:20] if n.source else "─"
+            lines.append(f'  {medal} [{n.score:.1f}] <a href="{n.source}">{title}</a> <code>{host}</code>')
         lines.append("")
     elif r.pending > 0:
         top_pending = sorted([n for n in r.notes if n.status == "pending"], key=lambda n: n.score, reverse=True)[:3]
@@ -126,23 +117,14 @@ def build_report(r) -> str:
         "",
     ]
 
-    # ── 5. 今日重点 & 合成建议 ────────────────────────────────────
+    # ── 5. 合成建议 ────────────────────────────────────────────
     pending_high = [n for n in r.notes if n.status == "pending" and n.score >= 9.0]
-    un_synthesized = [n for n in r.notes if n.get("synthesized") is not True and any(t in n.tags for t in ["BouncerDump", "WebClip", "PDFIngested"])]
-
-    if un_synthesized and len(un_synthesized) >= 5:
-        lines += [
-            "🧬 <b>认知提炼建议</b>",
-            f"  发现 <b>{len(un_synthesized)}</b> 条新碎片尚未合成。",
-            f"  建议执行: <code>python agents/axiom_synthesizer/synthesizer.py</code>",
-            "",
-        ]
 
     if pending_high:
         top = max(pending_high, key=lambda n: n.score)
         lines += [
             "🎯 <b>今日重点阅读</b>",
-            f"  {score_medal(top.score)} [{top.score:.1f}] <a href=\"{top.source}\">{(top.title or top.filename)[:50]}</a>",
+            f'  {score_medal(top.score)} [{top.score:.1f}] <a href="{top.source}">{(top.title or top.filename)[:50]}</a>',
             "",
         ]
 
@@ -167,7 +149,7 @@ def main(mock: bool = False):
     if send_message(report):
         print("✅ Daily Briefing 推送成功")
     else:
-        print("⚠️ 推送失败，本地输出：\n" + report.replace("<b>","").replace("</b>",""))
+        print("⚠️ 推送失败，本地输出：\n" + report.replace("<b>", "").replace("</b>", ""))
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

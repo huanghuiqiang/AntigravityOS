@@ -14,39 +14,22 @@ Pi 在 Telegram 对话中调用此脚本，实现对 Obsidian Vault 的自然语
   python3 vault_query.py recent [N]       # 最近 N 条入库笔记（默认 5）
 """
 
-import os
 import re
-import sys
 import json
 import argparse
 from pathlib import Path
 from datetime import datetime, timedelta
 from typing import Optional
 
+from agos.config import vault_path, inbox_folder
+from agos.frontmatter import parse_frontmatter as _parse_frontmatter
+
 # ── Vault 配置 ────────────────────────────────────────────────────
-VAULT = Path(os.getenv("OBSIDIAN_VAULT", "/Users/hugh/Documents/Obsidian/AINotes"))
-INBOX = VAULT / "00_Inbox"
+VAULT = vault_path()
+INBOX = VAULT / inbox_folder()
 MAX_RESULTS     = 8     # 搜索最多返回的文件数
 SNIPPET_CHARS   = 300   # 每个结果显示多少字符的正文摘要
 MAX_NOTE_CHARS  = 4000  # get 命令返回的最大正文字符数
-
-
-# ── 内部工具 ──────────────────────────────────────────────────────
-
-def _parse_frontmatter(content: str):
-    """返回 (dict, body_str)。"""
-    if not content.startswith("---"):
-        return {}, content
-    end = content.find("\n---", 3)
-    if end == -1:
-        return {}, content
-    try:
-        import yaml
-        fm = yaml.safe_load(content[3:end]) or {}
-    except Exception:
-        fm = {}
-    body = content[end + 4:].lstrip("\n")
-    return fm, body
 
 
 def _all_md_files(base: Path = VAULT) -> list[Path]:

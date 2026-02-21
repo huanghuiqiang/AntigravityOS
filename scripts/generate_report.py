@@ -2,19 +2,16 @@
 generate_report.py ── Antigravity OS 静态 HTML 报告生成器 (方案 B)
 """
 
-import sys
 import json
 import argparse
 import subprocess
 from pathlib import Path
 from datetime import datetime, timedelta
 
-_ROOT = Path(__file__).parent.parent
-sys.path.insert(0, str(_ROOT))
-
 from scripts.stats import collect, StatsReport
+from agos.config import project_root
 
-DEFAULT_OUT = _ROOT / "data" / "dashboard.html"
+DEFAULT_OUT = project_root() / "data" / "dashboard.html"
 
 
 def render_html(r: StatsReport) -> str:
@@ -68,7 +65,7 @@ def render_html(r: StatsReport) -> str:
           </tbody>
         </table>"""
 
-    hc = "#4ade80" if r.health_score >= 80 else "#facc15" if r.health_score >= 50 else "#f87171"
+    hc = "#4ade80" if r.health_score >= 85 else "#facc15" if r.health_score >= 60 else "#f87171"
     funnel_total   = r.total or 1
     pct_done    = r.done    / funnel_total * 100
     pct_pending = r.pending / funnel_total * 100
@@ -78,7 +75,7 @@ def render_html(r: StatsReport) -> str:
         if not dt: return '<span class="na">从未运行</span>'
         delta = datetime.now() - dt
         h = delta.total_seconds() / 3600
-        color = "#4ade80" if h < 25 else "#f87171"
+        color = "#4ade80" if h < 26 else "#f87171"
         return f'<span style="color:{color}">{dt.strftime("%m-%d %H:%M")} <small>({h:.0f}h 前)</small></span>'
 
     orphan_list_html = "".join(f'<li style="margin-bottom:4px; opacity:0.8;">• {name.replace("Axiom -","").strip()[:30]}</li>' for name in r.orphan_axioms[:4])
@@ -246,7 +243,7 @@ new Chart(document.getElementById('sparkChart'), {{
 def main():
     parser = argparse.ArgumentParser(description="生成 Antigravity OS HTML 报告")
     parser.add_argument("--out",       default=str(DEFAULT_OUT), help="输出路径")
-    parser.add_argument("--no-open",   action="store_true",      help="不自动打开浏览器")
+    parser.add_argument("--no-open",   action="store_true")
     args = parser.parse_args()
     r = collect()
     html = render_html(r)
@@ -255,7 +252,10 @@ def main():
     out.write_text(html, encoding="utf-8")
     print(f"✅ 报告已生成: {out}")
     if not args.no_open:
-        subprocess.run(["open", str(out)], check=False)
+        try:
+            subprocess.run(["open", str(out)], check=False)
+        except Exception:
+            pass
 
 
 if __name__ == "__main__":
