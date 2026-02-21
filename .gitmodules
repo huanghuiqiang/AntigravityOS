@@ -1,0 +1,3 @@
+[submodule "agents/cognitive_bouncer"]
+	path = agents/cognitive_bouncer
+	url = git@github.com:huanghuiqiang/Cognitive-Bouncer.git
