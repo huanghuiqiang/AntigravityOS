@@ -39,6 +39,9 @@ CRON_BOUNCER="0 8 * * *   cd $ROOT && PYTHONPATH=$ROOT $PYTHON agents/cognitive_
 # 09:00 每周一 - Knowledge Auditor：知识库审计周报
 CRON_AUDIT="0 9 * * 1    cd $ROOT && PYTHONPATH=$ROOT $PYTHON agents/knowledge_auditor/auditor.py >> $LOG_DIR/auditor.log 2>&1"
 
+# 每 4 小时 - Knowledge Auditor (Alert Mode)：静默巡检，亚健康时立即报警
+CRON_ALERT="0 */4 * * *  cd $ROOT && PYTHONPATH=$ROOT $PYTHON agents/knowledge_auditor/auditor.py --alert >> $LOG_DIR/auditor.log 2>&1"
+
 # 10:30 - Inbox Processor：NotebookLM 合成 + 归档 + 通知
 CRON_INBOX="30 10 * * *  cd $ROOT && PYTHONPATH=$ROOT $PYTHON agents/inbox_processor/inbox_processor.py >> $LOG_DIR/inbox_processor.log 2>&1"
 
