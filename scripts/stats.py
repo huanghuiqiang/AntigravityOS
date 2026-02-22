@@ -136,6 +136,11 @@ def _parse_inbox_log() -> list[CronRun]:
     return runs
 
 
+def _load_auditor():
+    from agents.knowledge_auditor.auditor import Auditor
+    return Auditor
+
+
 # ── 主收集函数 ────────────────────────────────────────────────────
 
 def collect() -> StatsReport:
@@ -232,13 +237,13 @@ def collect() -> StatsReport:
 
     # ── 6. 运行 Knowledge Auditor ──────────────────────────────
     try:
-        from agents.knowledge_auditor.auditor import Auditor
+        Auditor = _load_auditor()
         auditor = Auditor(vault)
         report.orphan_axioms = auditor.audit_orphans()
         report.backlog_issues = auditor.audit_backlog()
         report.meta_issues = auditor.audit_metadata()
     except Exception as e:
-        print(f"  ⚠️ Auditor integration failed: {e}")
+        _warn("stats/auditor", "Auditor integration failed", e)
 
     # ── 7. 系统健康评分 ──────────────────────────────────────────
     health = 100.0

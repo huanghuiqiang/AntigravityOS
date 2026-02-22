@@ -21,3 +21,13 @@ def test_warn_outputs_error_fields(capsys):
     payload = json.loads(out)
     assert payload["error"] == "bad value"
     assert payload["error_type"] == "ValueError"
+
+
+def test_collect_warns_when_auditor_unavailable(monkeypatch, capsys):
+    monkeypatch.setattr(stats, "_load_auditor", lambda: (_ for _ in ()).throw(RuntimeError("auditor boom")))
+    report = stats.collect()
+    assert report is not None
+    out = capsys.readouterr().out.strip().splitlines()
+    payload = json.loads(out[-1])
+    assert payload["scope"] == "stats/auditor"
+    assert payload["error_type"] == "RuntimeError"
