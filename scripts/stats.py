@@ -74,6 +74,8 @@ class StatsReport:
     # ── Cron 历史 ─────────────────────────────────────────────────
     last_bouncer_run:   Optional[datetime] = None
     last_inbox_run:     Optional[datetime] = None
+    bouncer_idle_hours: float = 0.0
+    inbox_idle_hours:   float = 0.0
     bouncer_7day:       list = field(default_factory=list)
     throughput_7day:    list = field(default_factory=list)
 
@@ -250,8 +252,14 @@ def collect() -> StatsReport:
     inbox_runs = _parse_inbox_log()
     if bouncer_runs:
         report.last_bouncer_run = bouncer_runs[-1].time
+        report.bouncer_idle_hours = (
+            datetime.now() - report.last_bouncer_run
+        ).total_seconds() / 3600
     if inbox_runs:
         report.last_inbox_run = inbox_runs[-1].time
+        report.inbox_idle_hours = (
+            datetime.now() - report.last_inbox_run
+        ).total_seconds() / 3600
 
     # ── 6. 运行 Knowledge Auditor ──────────────────────────────
     try:
