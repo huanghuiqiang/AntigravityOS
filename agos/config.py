@@ -83,7 +83,7 @@ def telegram_chat_id() -> str:
 
 def model_bouncer() -> str:
     """Bouncer 使用的模型。"""
-    return os.getenv("MODEL_BOUNCER", "google/gemini-2.0-flash")
+    return os.getenv("MODEL_BOUNCER", "google/gemini-2.0-flash-001")
 
 
 def model_synthesizer() -> str:

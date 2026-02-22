@@ -1,0 +1,60 @@
+# Removed obsolete version tag
+
+services:
+  # Base service definition for agents - not meant to be run directly, but extended
+  antigravity-base:
+    build:
+      context: .
+      dockerfile: Dockerfile # Use the base Dockerfile
+    volumes:
+      - .:/app # Mount the entire project directory into the container for development
+      # Changed to bind mount for logs
+      - ./data/logs:/app/data/logs 
+      # IMPORTANT: Mount your Obsidian Vault here. Replace "/host_path/to/your/Obsidian/Vault"
+      # with the actual path on your host machine.
+      # For example: - /Users/hugh/Documents/Obsidian/AINotes:/app/data/obsidian_vault
+      # This path will be used internally by agents to access the vault.
+      # Make sure the target path inside the container aligns with OBSIDIAN_VAULT environment variable.
+      - ${OBSIDIAN_VAULT_HOST_PATH}:/app/data/obsidian_vault
+    env_file:
+      - .env
+    environment:
+      # IMPORTANT: Set this to the path *inside* the container where the vault is mounted.
+      # E.g., if you mount /Users/hugh/.../AINotes to /app/data/obsidian_vault, then set this to /app/data/obsidian_vault
+      OBSIDIAN_VAULT: "/app/data/obsidian_vault"
+      # Enable unbuffered logging for Python to see logs in docker compose logs
+      PYTHONUNBUFFERED: "1"
+      # Other API Keys and sensitive info should be in .env file
+
+  # This service runs the Python-based scheduler
+  scheduler:
+    extends:
+      service: antigravity-base
+    command: ["python", "scheduler.py"]
+
+  # The following agent services are defined primarily for 'docker compose run' manual execution
+  # The actual scheduled execution will be handled by 'scheduler'
+  cognitive-bouncer:
+    extends:
+      service: antigravity-base
+    command: ["python", "agents/cognitive_bouncer/bouncer.py"] # For manual run
+
+  inbox-processor:
+    extends:
+      service: antigravity-base
+    command: ["python", "agents/inbox_processor/inbox_processor.py"] # For manual run
+
+  axiom-synthesizer:
+    extends:
+      service: antigravity-base
+    command: ["python", "agents/axiom_synthesizer/synthesizer.py"] # For manual run
+
+  daily-briefing:
+    extends:
+      service: antigravity-base
+    command: ["python", "agents/daily_briefing/daily_briefing.py"] # For manual run
+
+  knowledge-auditor:
+    extends:
+      service: antigravity-base
+    command: ["python", "agents/knowledge_auditor/auditor.py"] # For manual run
