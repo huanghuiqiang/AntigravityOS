@@ -126,11 +126,13 @@ def build_score_panel(r: StatsReport) -> Panel:
 
 
 def build_cron_panel(r: StatsReport) -> Panel:
-    def fmt_time(dt) -> str:
+    def fmt_time(dt, idle_hours: float | None = None) -> str:
         if not dt:
             return "[red]从未运行[/red]"
-        delta = datetime.now() - dt
-        h = delta.total_seconds() / 3600
+        h = idle_hours
+        if h is None:
+            delta = datetime.now() - dt
+            h = delta.total_seconds() / 3600
         color = "green" if h < 25 else "red"
         return f"[{color}]{dt.strftime('%m-%d %H:%M')} ({h:.0f}h 前)[/{color}]"
 
@@ -138,8 +140,8 @@ def build_cron_panel(r: StatsReport) -> Panel:
     tbl.add_column("Agent", style="bold")
     tbl.add_column("最后运行")
 
-    tbl.add_row("🤖 Bouncer",        fmt_time(r.last_bouncer_run))
-    tbl.add_row("🧠 InboxProcessor", fmt_time(r.last_inbox_run))
+    tbl.add_row("🤖 Bouncer",        fmt_time(r.last_bouncer_run, getattr(r, "bouncer_idle_hours", None)))
+    tbl.add_row("🧠 InboxProcessor", fmt_time(r.last_inbox_run, getattr(r, "inbox_idle_hours", None)))
 
     # 7天趋势迷你图
     spark_in   = sparkline(r.bouncer_7day)
