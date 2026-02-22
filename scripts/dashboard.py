@@ -223,6 +223,22 @@ def build_audit_panel(r: StatsReport) -> Panel:
     return Panel(tbl, title="[bold]🛡 知识库健康 (Auditor)[/bold]", border_style="white")
 
 
+def build_error_panel(r: StatsReport) -> Panel:
+    """展示错误类型 TopN。"""
+    tbl = Table(box=box.SIMPLE, show_header=True, expand=True)
+    tbl.add_column("错误类型", style="bold")
+    tbl.add_column("数量", justify="right", style="red")
+
+    if not r.error_types:
+        tbl.add_row("[dim]暂无错误类型[/dim]", "0")
+    else:
+        top_errors = sorted(r.error_types.items(), key=lambda x: (-x[1], x[0]))[:5]
+        for err_type, count in top_errors:
+            tbl.add_row(f"[code]{err_type}[/code]", str(count))
+
+    return Panel(tbl, title="[bold]🧩 Error Types[/bold]", border_style="red")
+
+
 # ── 完整仪表盘渲染 ────────────────────────────────────────────────
 
 def render(r: StatsReport):
@@ -237,6 +253,7 @@ def render(r: StatsReport):
         build_audit_panel(r),
     ], expand=True))
 
+    console.print(build_error_panel(r))
     console.print(build_recent_table(r))
     console.print(Rule(style="dim"))
     console.print(
