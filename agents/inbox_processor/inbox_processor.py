@@ -270,7 +270,7 @@ def build_telegram_report(results: list[dict], total_pending: int) -> str:
 
     if fail_list:
         lines.append("📌 失败类型统计：")
-        for err_type, count in sorted(fail_type_counter.items(), key=lambda x: x[0]):
+        for err_type, count in sorted(fail_type_counter.items(), key=lambda x: (-x[1], x[0])):
             lines.append(f"  • <code>{err_type}</code>: {count}")
         lines.append("\n⚠️ 失败条目：")
         for r in fail_list:

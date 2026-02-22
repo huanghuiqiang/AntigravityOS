@@ -36,3 +36,4 @@ def test_telegram_report_groups_failure_types():
     assert "失败类型统计" in text
     assert "<code>report_wait_timeout</code>: 2" in text
     assert "<code>report_task_parse_failed</code>: 1" in text
+    assert text.find("report_wait_timeout") < text.find("report_task_parse_failed")
