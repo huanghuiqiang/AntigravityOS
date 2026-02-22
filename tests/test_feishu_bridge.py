@@ -2,15 +2,27 @@ import httpx
 import pytest
 import json
 
-pytest.importorskip("fastapi")
-from fastapi.testclient import TestClient
+try:
+    from fastapi.testclient import TestClient
+
+    FASTAPI_AVAILABLE = True
+except ModuleNotFoundError:  # pragma: no cover - environment dependent
+    TestClient = None
+    FASTAPI_AVAILABLE = False
 
 from skills.feishu_bridge.bridge import BridgeConfig, FeishuDocBridge
-from skills.feishu_bridge.main import app
+if FASTAPI_AVAILABLE:
+    from skills.feishu_bridge.main import app
+else:  # pragma: no cover - environment dependent
+    app = None
 
 
 @pytest.fixture(autouse=True)
 def _reset_bridge_singleton():
+    if not FASTAPI_AVAILABLE:
+        yield
+        return
+
     from skills.feishu_bridge import main as main_module
 
     main_module._bridge_singleton = None
@@ -174,6 +186,8 @@ def test_find_section_block_id_with_normalized_title() -> None:
 
 
 def test_health_returns_error_payload_when_env_missing(monkeypatch) -> None:
+    if not FASTAPI_AVAILABLE:
+        pytest.skip("fastapi not installed")
     from skills.feishu_bridge import main as main_module
 
     monkeypatch.setattr(
@@ -190,6 +204,8 @@ def test_health_returns_error_payload_when_env_missing(monkeypatch) -> None:
 
 
 def test_read_doc_returns_error_payload_when_env_missing(monkeypatch) -> None:
+    if not FASTAPI_AVAILABLE:
+        pytest.skip("fastapi not installed")
     from skills.feishu_bridge import main as main_module
 
     monkeypatch.setattr(
@@ -273,9 +289,12 @@ def test_update_bitable_fallback_to_put_on_patch_error() -> None:
 
 
 def test_update_bitable_does_not_fallback_on_auth_error() -> None:
-    calls = {"patch": 0, "put": 0}
+    calls = {"patch": 0, "put": 0, "auth": 0}
 
     def handler(req: httpx.Request) -> httpx.Response:
+        if req.url.path.endswith("/auth/v3/tenant_access_token/internal"):
+            calls["auth"] += 1
+            return httpx.Response(200, json={"code": 0, "tenant_access_token": "new-token", "expire": 7200})
         if req.url.path.endswith("/open-apis/bitable/v1/apps/app_x/tables/tbl_x/records/rec_x"):
             if req.method == "PATCH":
                 calls["patch"] += 1
@@ -298,11 +317,14 @@ def test_update_bitable_does_not_fallback_on_auth_error() -> None:
             fields={"Status": "Done"},
         )
     assert "403" in str(exc.value)
-    assert calls["patch"] == 1
+    assert calls["patch"] == 2
+    assert calls["auth"] == 1
     assert calls["put"] == 0
 
 
 def test_update_bitable_endpoint_returns_error_payload_when_env_missing(monkeypatch) -> None:
+    if not FASTAPI_AVAILABLE:
+        pytest.skip("fastapi not installed")
     from skills.feishu_bridge import main as main_module
 
     monkeypatch.setattr(
@@ -357,6 +379,8 @@ def test_create_sub_doc_success() -> None:
 
 
 def test_create_sub_doc_endpoint_returns_error_payload_when_env_missing(monkeypatch) -> None:
+    if not FASTAPI_AVAILABLE:
+        pytest.skip("fastapi not installed")
     from skills.feishu_bridge import main as main_module
 
     monkeypatch.setattr(
@@ -373,6 +397,8 @@ def test_create_sub_doc_endpoint_returns_error_payload_when_env_missing(monkeypa
 
 
 def test_health_returns_403_when_auth_forbidden(monkeypatch) -> None:
+    if not FASTAPI_AVAILABLE:
+        pytest.skip("fastapi not installed")
     from skills.feishu_bridge import main as main_module
 
     monkeypatch.setattr(
@@ -388,6 +414,8 @@ def test_health_returns_403_when_auth_forbidden(monkeypatch) -> None:
 
 
 def test_append_markdown_returns_400_for_empty_markdown(monkeypatch) -> None:
+    if not FASTAPI_AVAILABLE:
+        pytest.skip("fastapi not installed")
     from skills.feishu_bridge import main as main_module
 
     class _Bridge:
@@ -406,6 +434,8 @@ def test_append_markdown_returns_400_for_empty_markdown(monkeypatch) -> None:
 
 
 def test_bridge_singleton_reuses_same_instance(monkeypatch) -> None:
+    if not FASTAPI_AVAILABLE:
+        pytest.skip("fastapi not installed")
     from skills.feishu_bridge import main as main_module
 
     calls = {"build": 0}
