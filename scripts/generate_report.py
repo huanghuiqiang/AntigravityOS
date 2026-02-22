@@ -87,6 +87,19 @@ def render_html(r: StatsReport) -> str:
     if not r.orphan_axioms:
         orphan_list_html = '<li style="color:var(--dim);">✅ 无孤立公理</li>'
 
+    error_type_rows = ""
+    if r.error_types:
+        top_errors = sorted(r.error_types.items(), key=lambda x: x[1], reverse=True)[:5]
+        for err_type, count in top_errors:
+            error_type_rows += (
+                f"<tr>"
+                f"<td><code>{err_type}</code></td>"
+                f"<td style='text-align:right; color: var(--red); font-weight: 700;'>{count}</td>"
+                f"</tr>"
+            )
+    else:
+        error_type_rows = "<tr><td style='color:var(--dim);'>暂无错误类型</td><td>0</td></tr>"
+
     return f"""<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -209,6 +222,17 @@ def render_html(r: StatsReport) -> str:
 <div class="card">
   <h2>⏳ Pending 队列</h2>
   {pending_section}
+</div>
+<div class="card" style="margin-top:16px;">
+  <h2>🧩 Error Types Top</h2>
+  <table>
+    <thead>
+      <tr><th>错误类型</th><th style="text-align:right;">数量</th></tr>
+    </thead>
+    <tbody>
+      {error_type_rows}
+    </tbody>
+  </table>
 </div>
 <script>
 const DAYS = {json.dumps(days)};

@@ -213,6 +213,13 @@ def build_audit_panel(r: StatsReport) -> Panel:
         if len(r.orphan_axioms) > 3:
             tbl.add_row(f"    ...等 {len(r.orphan_axioms)-3} 条", "", style="dim")
 
+    if r.error_types:
+        tbl.add_row("─" * 12, "─" * 8)
+        top_errors = sorted(r.error_types.items(), key=lambda x: x[1], reverse=True)[:3]
+        for err_type, count in top_errors:
+            short_err = err_type[:20]
+            tbl.add_row(f"  • {short_err}", f"[red]{count}[/red]", style="dim")
+
     return Panel(tbl, title="[bold]🛡 知识库健康 (Auditor)[/bold]", border_style="white")
 
 
