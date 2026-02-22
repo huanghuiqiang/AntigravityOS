@@ -45,6 +45,15 @@ def _warn(scope: str, detail: str):
     print(f"    ⚠️ [{scope}] {detail}")
 
 
+def _set_error(result: dict, error_type: str, message: str, note_path: str = "", source_url: str = "") -> dict:
+    result["success"] = False
+    result["error"] = message
+    result["error_type"] = error_type
+    result["note_path"] = note_path
+    result["source_url"] = source_url
+    return result
+
+
 def _run(cmd: list[str], timeout: int = 60) -> tuple[int, str, str]:
     """运行子命令，返回 (returncode, stdout, stderr)。"""
     try:
@@ -73,13 +82,20 @@ def process_with_notebooklm(title: str, source_url: str, note_path: str) -> dict
       5. 等待生成完成
       6. 下载报告内容
     """
-    result = {"success": False, "notebook_id": "", "report": "", "error": ""}
+    result = {
+        "success": False,
+        "notebook_id": "",
+        "report": "",
+        "error": "",
+        "error_type": "",
+        "note_path": note_path,
+        "source_url": source_url,
+    }
 
     safe_name = title[:50].replace('"', "'")
     rc, out, err = _run(["notebooklm", "create", f"Bouncer: {safe_name}", "--json"], timeout=30)
     if rc != 0:
-        result["error"] = f"创建 notebook 失败: {err}"
-        return result
+        return _set_error(result, "notebook_create_failed", f"创建 notebook 失败: {err}", note_path, source_url)
 
     try:
         nb_data = json.loads(out)
@@ -87,8 +103,7 @@ def process_with_notebooklm(title: str, source_url: str, note_path: str) -> dict
         result["notebook_id"] = notebook_id
         print(f"    📓 Notebook 创建成功: {notebook_id[:8]}...")
     except (json.JSONDecodeError, KeyError) as e:
-        result["error"] = f"解析 notebook ID 失败: {e} | 原始输出: {out}"
-        return result
+        return _set_error(result, "notebook_create_parse_failed", f"解析 notebook ID 失败: {e} | 原始输出: {out}", note_path, source_url)
 
     if source_url:
         rc, out, err = _run(
@@ -126,16 +141,14 @@ def process_with_notebooklm(title: str, source_url: str, note_path: str) -> dict
         timeout=60
     )
     if rc != 0:
-        result["error"] = f"生成报告失败: {err}"
-        return result
+        return _set_error(result, "report_generate_failed", f"生成报告失败: {err}", note_path, source_url)
 
     try:
         gen_data = json.loads(out)
         task_id = gen_data.get("task_id", "")
         print(f"    🔄 报告生成中，task_id: {task_id[:8]}...")
     except (json.JSONDecodeError, KeyError) as e:
-        result["error"] = f"解析 task_id 失败: {e}"
-        return result
+        return _set_error(result, "report_task_parse_failed", f"解析 task_id 失败: {e}", note_path, source_url)
 
     rc, out, err = _run(
         ["notebooklm", "artifact", "wait", task_id,
@@ -144,11 +157,9 @@ def process_with_notebooklm(title: str, source_url: str, note_path: str) -> dict
         timeout=NLM_TIMEOUT + 30
     )
     if rc == 2:
-        result["error"] = f"报告生成超时（>{NLM_TIMEOUT}s）"
-        return result
+        return _set_error(result, "report_wait_timeout", f"报告生成超时（>{NLM_TIMEOUT}s）", note_path, source_url)
     if rc != 0:
-        result["error"] = f"等待报告失败: {err}"
-        return result
+        return _set_error(result, "report_wait_failed", f"等待报告失败: {err}", note_path, source_url)
 
     tmp_path = f"/tmp/nlm_report_{notebook_id[:8]}.md"
     rc, out, err = _run(
@@ -157,8 +168,7 @@ def process_with_notebooklm(title: str, source_url: str, note_path: str) -> dict
         timeout=30
     )
     if rc != 0:
-        result["error"] = f"下载报告失败: {err}"
-        return result
+        return _set_error(result, "report_download_failed", f"下载报告失败: {err}", note_path, source_url)
 
     try:
         report_content = Path(tmp_path).read_text(encoding="utf-8")
@@ -166,7 +176,7 @@ def process_with_notebooklm(title: str, source_url: str, note_path: str) -> dict
         result["report"] = report_content
         print(f"    📄 报告下载成功（{len(report_content)} 字符）")
     except FileNotFoundError:
-        result["error"] = "报告文件未找到"
+        return _set_error(result, "report_file_missing", "报告文件未找到", note_path, source_url)
 
     return result
 
@@ -189,6 +199,9 @@ def process_note(note: dict, dry_run: bool = False) -> dict:
         "success": False,
         "notebook_id": "",
         "error": "",
+        "error_type": "",
+        "note_path": path,
+        "source_url": source,
     }
 
     if dry_run:
@@ -198,6 +211,7 @@ def process_note(note: dict, dry_run: bool = False) -> dict:
 
     nlm_result = process_with_notebooklm(title, source, path)
     outcome["notebook_id"] = nlm_result.get("notebook_id", "")
+    outcome["error_type"] = nlm_result.get("error_type", "")
 
     if nlm_result["success"]:
         report_section = f"""

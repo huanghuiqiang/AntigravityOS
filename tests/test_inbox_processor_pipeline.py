@@ -20,3 +20,6 @@ def test_process_note_dry_run(tmp_vault):
     result = process_note(note, dry_run=True)
     assert result["success"] is True
     assert result["title"] == "Test Article"
+    assert result["note_path"].endswith("Bouncer - Test Article.md")
+    assert result["source_url"] == "https://example.com/article"
+    assert result["error_type"] == ""

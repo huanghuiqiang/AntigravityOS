@@ -1,9 +1,12 @@
 """scheduler 触发与日志写入测试。"""
 
 import sys
-import pytest
+import types
 
-pytest.importorskip("schedule")
+# scheduler.py 在模块加载时 import schedule；测试环境可能未安装该依赖。
+if "schedule" not in sys.modules:
+    sys.modules["schedule"] = types.ModuleType("schedule")
+
 import scheduler
 
 
