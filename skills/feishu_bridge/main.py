@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from threading import Lock
 
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
@@ -33,6 +34,27 @@ class CreateSubDocRequest(BaseModel):
 
 
 app = FastAPI(title="Local Feishu Document Bridge", version="1.0.0")
+_bridge_lock = Lock()
+_bridge_singleton = None
+
+
+def _get_bridge():
+    global _bridge_singleton
+    if _bridge_singleton is not None:
+        return _bridge_singleton
+    with _bridge_lock:
+        if _bridge_singleton is None:
+            _bridge_singleton = build_bridge_from_env()
+    return _bridge_singleton
+
+
+@app.on_event("shutdown")
+def _shutdown_bridge() -> None:
+    global _bridge_singleton
+    with _bridge_lock:
+        if _bridge_singleton is not None:
+            _bridge_singleton.close()
+            _bridge_singleton = None
 
 
 def _map_error_status(message: str) -> int:
@@ -66,51 +88,38 @@ def _error_response(exc: FeishuBridgeError) -> JSONResponse:
 
 @app.post("/append_markdown")
 def append_markdown(payload: AppendMarkdownRequest) -> dict:
-    bridge = None
     try:
-        bridge = build_bridge_from_env()
+        bridge = _get_bridge()
         return bridge.append_markdown(
             markdown=payload.markdown,
             section_title=payload.section_title,
         )
     except FeishuBridgeError as exc:
         return _error_response(exc)
-    finally:
-        if bridge is not None:
-            bridge.close()
 
 
 @app.post("/read_doc")
 def read_doc(payload: ReadDocRequest) -> dict:
-    bridge = None
     try:
-        bridge = build_bridge_from_env()
+        bridge = _get_bridge()
         return bridge.read_doc(payload.format)
     except FeishuBridgeError as exc:
         return _error_response(exc)
-    finally:
-        if bridge is not None:
-            bridge.close()
 
 
 @app.post("/health")
 def health() -> dict:
-    bridge = None
     try:
-        bridge = build_bridge_from_env()
+        bridge = _get_bridge()
         return bridge.health()
     except FeishuBridgeError as exc:
         return _error_response(exc)
-    finally:
-        if bridge is not None:
-            bridge.close()
 
 
 @app.post("/update_bitable")
 def update_bitable(payload: UpdateBitableRequest) -> dict:
-    bridge = None
     try:
-        bridge = build_bridge_from_env()
+        bridge = _get_bridge()
         return bridge.update_bitable(
             app_token=payload.app_token,
             table_id=payload.table_id,
@@ -119,22 +128,15 @@ def update_bitable(payload: UpdateBitableRequest) -> dict:
         )
     except FeishuBridgeError as exc:
         return _error_response(exc)
-    finally:
-        if bridge is not None:
-            bridge.close()
 
 
 @app.post("/create_sub_doc")
 def create_sub_doc(payload: CreateSubDocRequest) -> dict:
-    bridge = None
     try:
-        bridge = build_bridge_from_env()
+        bridge = _get_bridge()
         return bridge.create_sub_doc(
             title=payload.title,
             folder_token=payload.folder_token,
         )
     except FeishuBridgeError as exc:
         return _error_response(exc)
-    finally:
-        if bridge is not None:
-            bridge.close()

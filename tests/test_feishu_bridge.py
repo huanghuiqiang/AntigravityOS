@@ -9,6 +9,15 @@ from skills.feishu_bridge.bridge import BridgeConfig, FeishuDocBridge
 from skills.feishu_bridge.main import app
 
 
+@pytest.fixture(autouse=True)
+def _reset_bridge_singleton():
+    from skills.feishu_bridge import main as main_module
+
+    main_module._bridge_singleton = None
+    yield
+    main_module._bridge_singleton = None
+
+
 def test_auth_error_preserves_feishu_error_details() -> None:
     calls = {"doc": 0, "auth": 0}
 
@@ -336,6 +345,30 @@ def test_append_markdown_returns_400_for_empty_markdown(monkeypatch) -> None:
     resp = client.post("/append_markdown", json={"markdown": "", "section_title": "每日进度日志"})
     assert resp.status_code == 400
     assert resp.json()["success"] is False
+
+
+def test_bridge_singleton_reuses_same_instance(monkeypatch) -> None:
+    from skills.feishu_bridge import main as main_module
+
+    calls = {"build": 0}
+
+    class _Bridge:
+        def health(self):
+            return {"success": True}
+
+        def close(self):
+            return None
+
+    def _build():
+        calls["build"] += 1
+        return _Bridge()
+
+    monkeypatch.setattr(main_module, "build_bridge_from_env", _build)
+    client = TestClient(app)
+
+    assert client.post("/health").status_code == 200
+    assert client.post("/health").status_code == 200
+    assert calls["build"] == 1
 
 
 def test_append_markdown_uses_children_endpoint() -> None:
