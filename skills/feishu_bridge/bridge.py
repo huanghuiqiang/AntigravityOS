@@ -6,10 +6,14 @@ one fixed Feishu doc. It is used by the skill CLI and FastAPI service.
 
 from __future__ import annotations
 
+import json
+import logging
 import os
 import re
 import time
+import uuid
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -17,6 +21,15 @@ from dotenv import load_dotenv
 
 DEFAULT_BASE_URL = "https://open.feishu.cn"
 DEFAULT_DOC_TOKEN = "H6ZfwwCcGiTMC2k5YgBcTBO3nKe"
+_LOG_PATH = Path("logs/bridge.log")
+_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+_LOGGER = logging.getLogger("feishu_bridge")
+if not _LOGGER.handlers:
+    _LOGGER.setLevel(logging.INFO)
+    _handler = logging.FileHandler(_LOG_PATH, encoding="utf-8")
+    _handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
+    _LOGGER.addHandler(_handler)
+    _LOGGER.propagate = False
 
 
 class FeishuBridgeError(RuntimeError):
@@ -122,6 +135,8 @@ class FeishuDocBridge:
     ) -> dict[str, Any]:
         url = f"{self.config.base_url}{path}"
         refreshed = False
+        trace_id = uuid.uuid4().hex[:12]
+        started = time.perf_counter()
 
         for attempt in range(1, self.config.retry_count + 1):
             resp = self._client.request(
@@ -130,6 +145,19 @@ class FeishuDocBridge:
                 params=params,
                 json=json_body,
                 headers=self._auth_headers(),
+            )
+            _LOGGER.info(
+                json.dumps(
+                    {
+                        "trace_id": trace_id,
+                        "event": "feishu_request",
+                        "attempt": attempt,
+                        "method": method,
+                        "path": path,
+                        "status": resp.status_code,
+                    },
+                    ensure_ascii=False,
+                )
             )
 
             if resp.status_code in {401, 403}:
@@ -140,6 +168,20 @@ class FeishuDocBridge:
                         parts.append(summary)
                     if log_id:
                         parts.append(f"log_id={log_id}")
+                    parts.append(f"trace_id={trace_id}")
+                    _LOGGER.error(
+                        json.dumps(
+                            {
+                                "trace_id": trace_id,
+                                "event": "auth_failed",
+                                "path": path,
+                                "status": resp.status_code,
+                                "summary": summary,
+                                "log_id": log_id,
+                            },
+                            ensure_ascii=False,
+                        )
+                    )
                     raise FeishuBridgeError(" | ".join(parts))
                 self._refresh_tenant_token()
                 refreshed = True
@@ -156,12 +198,44 @@ class FeishuDocBridge:
                 continue
 
             if data.get("code") != 0:
-                raise FeishuBridgeError(
-                    f"接口失败: path={path} status={resp.status_code} payload={data}"
+                elapsed_ms = int((time.perf_counter() - started) * 1000)
+                log_id = ""
+                if isinstance(data.get("error"), dict):
+                    log_id = str(data.get("error", {}).get("log_id") or "")
+                _LOGGER.error(
+                    json.dumps(
+                        {
+                            "trace_id": trace_id,
+                            "event": "feishu_error",
+                            "path": path,
+                            "status": resp.status_code,
+                            "code": data.get("code"),
+                            "msg": data.get("msg"),
+                            "log_id": log_id,
+                            "elapsed_ms": elapsed_ms,
+                        },
+                        ensure_ascii=False,
+                    )
                 )
+                raise FeishuBridgeError(
+                    f"接口失败: path={path} status={resp.status_code} payload={data} trace_id={trace_id}"
+                )
+            elapsed_ms = int((time.perf_counter() - started) * 1000)
+            _LOGGER.info(
+                json.dumps(
+                    {
+                        "trace_id": trace_id,
+                        "event": "feishu_success",
+                        "path": path,
+                        "status": resp.status_code,
+                        "elapsed_ms": elapsed_ms,
+                    },
+                    ensure_ascii=False,
+                )
+            )
             return data
 
-        raise FeishuBridgeError(f"请求重试耗尽: {path}")
+        raise FeishuBridgeError(f"请求重试耗尽: {path} trace_id={trace_id}")
 
     def get_document_meta(self) -> dict[str, Any]:
         return self._request(

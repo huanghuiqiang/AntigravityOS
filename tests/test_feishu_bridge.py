@@ -49,6 +49,7 @@ def test_auth_error_preserves_feishu_error_details() -> None:
     assert "code=99991672" in msg
     assert "Access denied" in msg
     assert "log_id=log_x_123" in msg
+    assert "trace_id=" in msg
     assert calls["doc"] == 2
     assert calls["auth"] == 1
 
