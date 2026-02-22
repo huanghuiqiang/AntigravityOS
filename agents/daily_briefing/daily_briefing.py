@@ -82,6 +82,13 @@ def build_report(r) -> str:
     else:
         lines.append("")
 
+    if r.error_types:
+        lines.append("🧩 <b>失败类型 Top</b>")
+        top_errors = sorted(r.error_types.items(), key=lambda x: x[1], reverse=True)[:3]
+        for err_type, count in top_errors:
+            lines.append(f"  • <code>{err_type}</code>: {count}")
+        lines.append("")
+
     # ── 3. 今日/昨日 Top 5 ───────────────────────────────────────
     yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
     today_notes = sorted(

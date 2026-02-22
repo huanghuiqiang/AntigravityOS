@@ -27,8 +27,6 @@ ROOT = project_root()
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-VAULT = vault_path()
-INBOX_DIR = inbox_path()
 INBOX_FOLDER = inbox_folder()
 BOUNCER_LOG = bouncer_log_file()
 INBOX_LOG = inbox_processor_log_file()
@@ -45,6 +43,7 @@ class NoteRecord:
     title:        str
     created:      str        # YYYY-MM-DD
     processed_at: str        # YYYY-MM-DD HH:MM  or ""
+    error_type:   str
     tags:         list[str]
     is_clip:      bool       # True = WebClip, False = Bouncer
 
@@ -66,6 +65,7 @@ class StatsReport:
     pending:     int = 0
     done:        int = 0
     error:       int = 0
+    error_types: dict = field(default_factory=dict)
     clips_today: int = 0
 
     score_dist:  dict = field(default_factory=dict)
@@ -141,6 +141,8 @@ def _parse_inbox_log() -> list[CronRun]:
 def collect() -> StatsReport:
     report = StatsReport(generated_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
     today_str = datetime.now().strftime("%Y-%m-%d")
+    vault = vault_path()
+    inbox_dir = inbox_path()
 
     # ── 1. 扫描 Inbox 笔记 ────────────────────────────────────────
     notes: list[NoteRecord] = []
@@ -171,14 +173,15 @@ def collect() -> StatsReport:
                         title=str(fm.get("title", f.stem)),
                         created=str(fm.get("created", "")),
                         processed_at=str(fm.get("processed_at", "")),
+                        error_type=str(fm.get("error_type", "")),
                         tags=tags,
                         is_clip="WebClip" in tags,
                     ))
                 except Exception as e:
                     _warn("stats/scan_note", f"解析失败: {f}", e)
 
-    if INBOX_DIR.exists():
-        _scan_dir(INBOX_DIR)
+    if inbox_dir.exists():
+        _scan_dir(inbox_dir)
 
     report.notes = notes
     report.total = len(notes)
@@ -188,6 +191,12 @@ def collect() -> StatsReport:
     report.pending = status_counter.get("pending", 0)
     report.done = status_counter.get("done", 0)
     report.error = status_counter.get("error", 0)
+    err_counter = Counter(
+        (n.error_type if n.error_type else "unknown_error")
+        for n in notes
+        if n.status == "error"
+    )
+    report.error_types = dict(err_counter)
     report.clips_today = sum(1 for n in notes if n.is_clip and n.created == today_str)
 
     # ── 3. 分数分布 ───────────────────────────────────────────────
@@ -224,7 +233,7 @@ def collect() -> StatsReport:
     # ── 6. 运行 Knowledge Auditor ──────────────────────────────
     try:
         from agents.knowledge_auditor.auditor import Auditor
-        auditor = Auditor(VAULT)
+        auditor = Auditor(vault)
         report.orphan_axioms = auditor.audit_orphans()
         report.backlog_issues = auditor.audit_backlog()
         report.meta_issues = auditor.audit_metadata()

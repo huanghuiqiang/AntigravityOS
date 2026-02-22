@@ -240,6 +240,7 @@ def process_note(note: dict, dry_run: bool = False) -> dict:
         update_frontmatter(note_name, {
             "status": "error",
             "error": nlm_result["error"][:200],
+            "error_type": nlm_result.get("error_type", "unknown_error"),
         })
         outcome["error"] = nlm_result["error"]
         print(f"    ❌ 处理失败: {nlm_result['error'][:80]}")
