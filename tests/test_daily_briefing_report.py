@@ -71,3 +71,28 @@ def test_build_report_flags_stale_cron():
     text = build_report(r)
     assert "Bouncer 超过 26h 未成功运行" in text
     assert "Inbox Processor 超过 26h 未成功运行" in text
+
+
+def test_build_report_uses_idle_hours_if_present():
+    old = datetime.now() - timedelta(hours=48)
+    r = SimpleNamespace(
+        health_score=90.0,
+        orphan_axioms=[],
+        backlog_issues=[],
+        error=0,
+        error_types={},
+        total=3,
+        pending=1,
+        done=2,
+        bottleneck="",
+        notes=[],
+        last_bouncer_run=old,
+        last_inbox_run=old,
+        bouncer_idle_hours=2.0,
+        inbox_idle_hours=3.0,
+        bouncer_7day=[0, 0, 0, 1, 0, 0, 1],
+        throughput_7day=[0, 0, 0, 1, 0, 0, 1],
+    )
+    text = build_report(r)
+    assert "Bouncer 超过 26h 未成功运行" not in text
+    assert "Inbox Processor 超过 26h 未成功运行" not in text

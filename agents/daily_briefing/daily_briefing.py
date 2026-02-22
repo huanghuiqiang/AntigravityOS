@@ -36,17 +36,21 @@ def score_medal(score: float) -> str:
     if score >= 8.5: return "🥇"
     return "⭐️"
 
-def fmt_cron_time(dt) -> str:
+def fmt_cron_time(dt, idle_hours: float | None = None) -> str:
     if not dt: return "❌ 从未运行"
-    delta = datetime.now() - dt
-    h = delta.total_seconds() / 3600
+    h = idle_hours
+    if h is None:
+        delta = datetime.now() - dt
+        h = delta.total_seconds() / 3600
     status = "✅" if h < 26 else "⚠️"
     return f"{status} {dt.strftime('%H:%M')} ({h:.0f}h 前)"
 
 
-def is_cron_stale(dt, max_hours: int = 26) -> bool:
+def is_cron_stale(dt, max_hours: int = 26, idle_hours: float | None = None) -> bool:
     if not dt:
         return True
+    if idle_hours is not None:
+        return idle_hours >= max_hours
     return (datetime.now() - dt).total_seconds() / 3600 >= max_hours
 
 
@@ -70,9 +74,12 @@ def build_report(r) -> str:
         )
     if r.error > 0:
         alerts.append(f"❌ <b>损坏条目</b>：共有 {r.error} 条错误笔记待检查")
-    if is_cron_stale(r.last_bouncer_run):
+    bouncer_idle = getattr(r, "bouncer_idle_hours", None)
+    inbox_idle = getattr(r, "inbox_idle_hours", None)
+
+    if is_cron_stale(r.last_bouncer_run, idle_hours=bouncer_idle):
         alerts.append("🤖 <b>Cron 异常</b>：Bouncer 超过 26h 未成功运行")
-    if is_cron_stale(r.last_inbox_run):
+    if is_cron_stale(r.last_inbox_run, idle_hours=inbox_idle):
         alerts.append("🧠 <b>Cron 异常</b>：Inbox Processor 超过 26h 未成功运行")
 
     alert_section = ""
@@ -131,8 +138,8 @@ def build_report(r) -> str:
     # ── 4. Cron & 7d 趋势 ────────────────────────────────────────
     lines += [
         "⏰ <b>Cron 状态</b>",
-        f"  🤖 Bouncer: {fmt_cron_time(r.last_bouncer_run)}",
-        f"  🧠 Inbox:   {fmt_cron_time(r.last_inbox_run)}",
+        f"  🤖 Bouncer: {fmt_cron_time(r.last_bouncer_run, idle_hours=bouncer_idle)}",
+        f"  🧠 Inbox:   {fmt_cron_time(r.last_inbox_run, idle_hours=inbox_idle)}",
         "",
         "📊 <b>本周趋势（7天）</b>",
         f"  入库: <code>{sparkline(r.bouncer_7day)}</code>  {sum(r.bouncer_7day)} 条",
