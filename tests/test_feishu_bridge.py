@@ -112,7 +112,7 @@ def test_health_returns_error_payload_when_env_missing(monkeypatch) -> None:
 
     client = TestClient(app)
     resp = client.post("/health")
-    assert resp.status_code == 200
+    assert resp.status_code == 500
     assert resp.json()["success"] is False
     assert "未配置" in resp.json()["message"]
 
@@ -128,7 +128,7 @@ def test_read_doc_returns_error_payload_when_env_missing(monkeypatch) -> None:
 
     client = TestClient(app)
     resp = client.post("/read_doc", json={"format": "markdown"})
-    assert resp.status_code == 200
+    assert resp.status_code == 500
     assert resp.json()["success"] is False
     assert "未配置" in resp.json()["message"]
 
@@ -219,7 +219,7 @@ def test_update_bitable_endpoint_returns_error_payload_when_env_missing(monkeypa
             "fields": {"Status": "Done"},
         },
     )
-    assert resp.status_code == 200
+    assert resp.status_code == 500
     assert resp.json()["success"] is False
     assert "未配置" in resp.json()["message"]
 
@@ -265,9 +265,42 @@ def test_create_sub_doc_endpoint_returns_error_payload_when_env_missing(monkeypa
 
     client = TestClient(app)
     resp = client.post("/create_sub_doc", json={"title": "周报 - 2026-02-22"})
-    assert resp.status_code == 200
+    assert resp.status_code == 500
     assert resp.json()["success"] is False
     assert "未配置" in resp.json()["message"]
+
+
+def test_health_returns_403_when_auth_forbidden(monkeypatch) -> None:
+    from skills.feishu_bridge import main as main_module
+
+    monkeypatch.setattr(
+        main_module,
+        "build_bridge_from_env",
+        lambda: (_ for _ in ()).throw(main_module.FeishuBridgeError("鉴权失败: 403")),
+    )
+
+    client = TestClient(app)
+    resp = client.post("/health")
+    assert resp.status_code == 403
+    assert resp.json()["success"] is False
+
+
+def test_append_markdown_returns_400_for_empty_markdown(monkeypatch) -> None:
+    from skills.feishu_bridge import main as main_module
+
+    class _Bridge:
+        def append_markdown(self, markdown: str, section_title: str | None = None) -> dict:
+            raise main_module.FeishuBridgeError("markdown 不能为空")
+
+        def close(self) -> None:
+            return None
+
+    monkeypatch.setattr(main_module, "build_bridge_from_env", lambda: _Bridge())
+
+    client = TestClient(app)
+    resp = client.post("/append_markdown", json={"markdown": "", "section_title": "每日进度日志"})
+    assert resp.status_code == 400
+    assert resp.json()["success"] is False
 
 
 def test_append_markdown_uses_children_endpoint() -> None:
