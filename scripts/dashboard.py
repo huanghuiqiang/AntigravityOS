@@ -4,12 +4,17 @@ dashboard.py ── Antigravity OS 终端仪表盘 (方案 A)
 用法：
   python scripts/dashboard.py            # 单次输出
   python scripts/dashboard.py --watch    # 每 30s 刷新
+  python scripts/dashboard.py --watch --interval 10
 """
 
+import sys
 import time
 import argparse
+from pathlib import Path
 from datetime import datetime
-from urllib.parse import urlparse
+
+_ROOT = Path(__file__).parent.parent
+sys.path.insert(0, str(_ROOT))
 
 from scripts.stats import collect, StatsReport
 
@@ -27,15 +32,15 @@ try:
     from rich.align import Align
 except ImportError:
     print("安装 rich: pip install rich")
-    exit(1)
+    sys.exit(1)
 
 console = Console()
 
 # ── 颜色/Emoji 工具 ───────────────────────────────────────────────
 
 def health_color(score: float) -> str:
-    if score >= 85: return "green"
-    if score >= 60: return "yellow"
+    if score >= 80: return "green"
+    if score >= 50: return "yellow"
     return "red"
 
 def score_emoji(score: float) -> str:
@@ -126,7 +131,7 @@ def build_cron_panel(r: StatsReport) -> Panel:
             return "[red]从未运行[/red]"
         delta = datetime.now() - dt
         h = delta.total_seconds() / 3600
-        color = "green" if h < 26 else "red"
+        color = "green" if h < 25 else "red"
         return f"[{color}]{dt.strftime('%m-%d %H:%M')} ({h:.0f}h 前)[/{color}]"
 
     tbl = Table(box=box.SIMPLE, show_header=False, expand=True)
@@ -147,7 +152,7 @@ def build_cron_panel(r: StatsReport) -> Panel:
 
 
 def build_recent_table(r: StatsReport) -> Panel:
-    """最近 8 条 pending 笔记列表。"""
+    """最近 8 条 pending 笔记列表（最需要处理的）。"""
     pending = sorted(
         [n for n in r.notes if n.status == "pending"],
         key=lambda n: n.score,
@@ -164,6 +169,7 @@ def build_recent_table(r: StatsReport) -> Panel:
         tbl.add_row("─", "[dim]无 pending 条目[/dim]", "", "")
     else:
         for n in pending:
+            from urllib.parse import urlparse
             host  = urlparse(n.source).netloc[:18] if n.source else "─"
             title = (n.title or n.filename)[:38]
             tbl.add_row(
@@ -183,21 +189,22 @@ def build_audit_panel(r: StatsReport) -> Panel:
     tbl.add_column("项目", style="bold")
     tbl.add_column("状态",   justify="right")
 
-    # 孤儿公理
+    # 1. 孤儿公理
     orphans_count = len(r.orphan_axioms)
     color = "red" if orphans_count > 5 else "yellow" if orphans_count > 0 else "green"
     tbl.add_row("🕸 孤儿 Axiom", f"[{color}]{orphans_count}[/{color}]")
 
-    # 积压警报
+    # 2. 积压警报
     backlog_count = len(r.backlog_issues)
     color = "red" if backlog_count > 0 else "green"
     tbl.add_row("⏳ 积压警报 (>10d)", f"[{color}]{backlog_count}[/{color}]")
 
-    # 元数据缺陷
+    # 3. 元数据缺陷
     meta_count = len(r.meta_issues)
     color = "yellow" if meta_count > 0 else "green"
     tbl.add_row("🏷 元数据缺失", f"[{color}]{meta_count}[/{color}]")
 
+    # 详情摘要（如果有孤儿 Axiom，列出前 3 个）
     if r.orphan_axioms:
         tbl.add_row("─" * 12, "─" * 8)
         for name in r.orphan_axioms[:3]:
@@ -215,6 +222,7 @@ def render(r: StatsReport):
     console.clear()
     console.print(build_health_panel(r))
 
+    # 中间行：Pipeline + 分数 + Cron + Audit 四列
     console.print(Columns([
         build_pipeline_table(r),
         build_score_panel(r),
@@ -235,17 +243,18 @@ def render(r: StatsReport):
 def main():
     parser = argparse.ArgumentParser(description="Antigravity OS 终端仪表盘")
     parser.add_argument("--watch",    action="store_true", help="持续刷新模式")
-    parser.add_argument("--interval", type=int, default=30, help="刷新间隔（秒）")
+    parser.add_argument("--interval", type=int, default=30, help="刷新间隔（秒，默认30）")
     args = parser.parse_args()
 
     if args.watch:
-        console.print(f"[dim]每 {args.interval}s 刷新...[/dim]\n")
+        console.print(f"[dim]👀 Watch 模式，每 {args.interval}s 刷新 (Ctrl+C 退出)[/dim]\n")
         while True:
             try:
                 r = collect()
                 render(r)
                 time.sleep(args.interval)
             except KeyboardInterrupt:
+                console.print("\n[dim]已退出[/dim]")
                 break
     else:
         r = collect()
