@@ -22,8 +22,9 @@ app = FastAPI(title="Local Feishu Document Bridge", version="1.0.0")
 
 @app.post("/append_markdown")
 def append_markdown(payload: AppendMarkdownRequest) -> dict:
-    bridge = build_bridge_from_env()
+    bridge = None
     try:
+        bridge = build_bridge_from_env()
         return bridge.append_markdown(
             markdown=payload.markdown,
             section_title=payload.section_title,
@@ -31,26 +32,31 @@ def append_markdown(payload: AppendMarkdownRequest) -> dict:
     except FeishuBridgeError as exc:
         return {"success": False, "message": str(exc)}
     finally:
-        bridge.close()
+        if bridge is not None:
+            bridge.close()
 
 
 @app.post("/read_doc")
 def read_doc(payload: ReadDocRequest) -> dict:
-    bridge = build_bridge_from_env()
+    bridge = None
     try:
+        bridge = build_bridge_from_env()
         return bridge.read_doc(payload.format)
     except FeishuBridgeError as exc:
         return {"success": False, "message": str(exc)}
     finally:
-        bridge.close()
+        if bridge is not None:
+            bridge.close()
 
 
 @app.post("/health")
 def health() -> dict:
-    bridge = build_bridge_from_env()
+    bridge = None
     try:
+        bridge = build_bridge_from_env()
         return bridge.health()
     except FeishuBridgeError as exc:
         return {"success": False, "message": str(exc)}
     finally:
-        bridge.close()
+        if bridge is not None:
+            bridge.close()

@@ -1,6 +1,11 @@
 import httpx
+import pytest
+
+pytest.importorskip("fastapi")
+from fastapi.testclient import TestClient
 
 from skills.feishu_bridge.bridge import BridgeConfig, FeishuDocBridge
+from skills.feishu_bridge.main import app
 
 
 def test_refresh_token_after_401() -> None:
@@ -93,3 +98,35 @@ def test_find_section_block_id() -> None:
 
     assert bridge._find_section_block_id("每日进度日志") == "b-1"
     assert bridge._find_section_block_id("不存在") is None
+
+
+def test_health_returns_error_payload_when_env_missing(monkeypatch) -> None:
+    from skills.feishu_bridge import main as main_module
+
+    monkeypatch.setattr(
+        main_module,
+        "build_bridge_from_env",
+        lambda: (_ for _ in ()).throw(main_module.FeishuBridgeError("FEISHU_APP_ID / FEISHU_APP_SECRET 未配置")),
+    )
+
+    client = TestClient(app)
+    resp = client.post("/health")
+    assert resp.status_code == 200
+    assert resp.json()["success"] is False
+    assert "未配置" in resp.json()["message"]
+
+
+def test_read_doc_returns_error_payload_when_env_missing(monkeypatch) -> None:
+    from skills.feishu_bridge import main as main_module
+
+    monkeypatch.setattr(
+        main_module,
+        "build_bridge_from_env",
+        lambda: (_ for _ in ()).throw(main_module.FeishuBridgeError("FEISHU_APP_ID / FEISHU_APP_SECRET 未配置")),
+    )
+
+    client = TestClient(app)
+    resp = client.post("/read_doc", json={"format": "markdown"})
+    assert resp.status_code == 200
+    assert resp.json()["success"] is False
+    assert "未配置" in resp.json()["message"]
