@@ -22,6 +22,22 @@ class FeishuBridgeError(RuntimeError):
     """Raised when Feishu bridge operations fail."""
 
 
+def _extract_error_meta(resp: httpx.Response) -> tuple[str, str]:
+    """Return (summary, log_id) from Feishu error payload if possible."""
+    try:
+        payload = resp.json()
+        if isinstance(payload, dict):
+            code = payload.get("code")
+            msg = payload.get("msg") or payload.get("message") or ""
+            error = payload.get("error") if isinstance(payload.get("error"), dict) else {}
+            log_id = error.get("log_id") or payload.get("log_id") or ""
+            summary = f"code={code} msg={msg}".strip()
+            return summary, str(log_id) if log_id else ""
+    except ValueError:
+        pass
+    return "", ""
+
+
 @dataclass
 class BridgeConfig:
     app_id: str
@@ -117,7 +133,13 @@ class FeishuDocBridge:
 
             if resp.status_code in {401, 403}:
                 if refreshed:
-                    raise FeishuBridgeError(f"鉴权失败: {resp.status_code}")
+                    summary, log_id = _extract_error_meta(resp)
+                    parts = [f"鉴权失败: {resp.status_code}"]
+                    if summary:
+                        parts.append(summary)
+                    if log_id:
+                        parts.append(f"log_id={log_id}")
+                    raise FeishuBridgeError(" | ".join(parts))
                 self._refresh_tenant_token()
                 refreshed = True
                 continue

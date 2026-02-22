@@ -9,6 +9,41 @@ from skills.feishu_bridge.bridge import BridgeConfig, FeishuDocBridge
 from skills.feishu_bridge.main import app
 
 
+def test_auth_error_preserves_feishu_error_details() -> None:
+    calls = {"doc": 0, "auth": 0}
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        if req.url.path.endswith("/auth/v3/tenant_access_token/internal"):
+            calls["auth"] += 1
+            return httpx.Response(200, json={"code": 0, "tenant_access_token": "fresh-token", "expire": 7200})
+        if req.url.path.endswith("/open-apis/docx/v1/documents/doc-1"):
+            calls["doc"] += 1
+            return httpx.Response(
+                403,
+                json={
+                    "code": 99991672,
+                    "msg": "Access denied",
+                    "error": {"log_id": "log_x_123"},
+                },
+            )
+        raise AssertionError(f"unexpected path: {req.url.path}")
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    bridge = FeishuDocBridge(BridgeConfig(app_id="id", app_secret="secret", document_id="doc-1"), client=client)
+    bridge._tenant_access_token = "stale"
+    bridge._token_expire_at = 9999999999
+
+    with pytest.raises(Exception) as exc:
+        bridge.health()
+    msg = str(exc.value)
+    assert "鉴权失败: 403" in msg
+    assert "code=99991672" in msg
+    assert "Access denied" in msg
+    assert "log_id=log_x_123" in msg
+    assert calls["doc"] == 2
+    assert calls["auth"] == 1
+
+
 def test_refresh_token_after_401() -> None:
     calls = {"auth": 0, "doc": 0}
 
