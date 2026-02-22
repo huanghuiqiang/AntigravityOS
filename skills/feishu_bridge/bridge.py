@@ -373,7 +373,11 @@ class FeishuDocBridge:
         payload = {"fields": fields}
         try:
             resp = self._request("PATCH", path, json_body=payload)
-        except FeishuBridgeError:
+        except FeishuBridgeError as exc:
+            msg = str(exc).lower()
+            allow_fallback = ("1254003" in msg) or ("method not allowed" in msg)
+            if not allow_fallback:
+                raise
             resp = self._request("PUT", path, json_body=payload)
 
         data = resp.get("data", {})

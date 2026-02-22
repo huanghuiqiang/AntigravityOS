@@ -244,6 +244,36 @@ def test_update_bitable_fallback_to_put_on_patch_error() -> None:
     assert calls["put"] == 1
 
 
+def test_update_bitable_does_not_fallback_on_auth_error() -> None:
+    calls = {"patch": 0, "put": 0}
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        if req.url.path.endswith("/open-apis/bitable/v1/apps/app_x/tables/tbl_x/records/rec_x"):
+            if req.method == "PATCH":
+                calls["patch"] += 1
+                return httpx.Response(403, json={"code": 91403, "msg": "Forbidden"})
+            if req.method == "PUT":
+                calls["put"] += 1
+                return httpx.Response(200, json={"code": 0, "data": {"record": {"record_id": "rec_x"}}})
+        raise AssertionError(f"unexpected {req.method} path: {req.url.path}")
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    bridge = FeishuDocBridge(BridgeConfig(app_id="id", app_secret="secret"), client=client)
+    bridge._tenant_access_token = "token"
+    bridge._token_expire_at = 9999999999
+
+    with pytest.raises(Exception) as exc:
+        bridge.update_bitable(
+            app_token="app_x",
+            table_id="tbl_x",
+            record_id="rec_x",
+            fields={"Status": "Done"},
+        )
+    assert "403" in str(exc.value)
+    assert calls["patch"] == 1
+    assert calls["put"] == 0
+
+
 def test_update_bitable_endpoint_returns_error_payload_when_env_missing(monkeypatch) -> None:
     from skills.feishu_bridge import main as main_module
 
