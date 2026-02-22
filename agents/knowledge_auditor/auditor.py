@@ -19,6 +19,11 @@ INBOX_FOLDER = inbox_folder()
 BACKLOG_THRESHOLD_DAYS = backlog_threshold_days()
 
 # ── 核心逻辑 ──────────────────────────────────────────────────────
+def _warn(scope: str, detail: str, err: Exception | None = None):
+    if err is None:
+        print(f"  ⚠️ [{scope}] {detail}")
+    else:
+        print(f"  ⚠️ [{scope}] {detail}: {err}")
 
 class Auditor:
     def __init__(self, vault: Path = None):
@@ -40,7 +45,8 @@ class Auditor:
                     link = link.strip()
                     if link in self.link_map:
                         self.link_map[link].add(f.stem)
-            except Exception:
+            except Exception as e:
+                _warn("auditor/link_map", f"读取失败: {f}", e)
                 continue
 
     def audit_orphans(self) -> List[str]:
@@ -68,7 +74,8 @@ class Auditor:
                             "days": (datetime.now() - created_dt).days,
                             "score": fm.get("score", 0),
                         })
-            except Exception:
+            except Exception as e:
+                _warn("auditor/backlog", f"解析失败: {f}", e)
                 continue
         return sorted(backlog, key=lambda x: x["days"], reverse=True)
 
@@ -82,7 +89,8 @@ class Auditor:
                 if fm.get("status") == "done":
                     if not fm.get("tags") or not fm.get("source"):
                         issues.append(f.stem)
-            except Exception:
+            except Exception as e:
+                _warn("auditor/metadata", f"解析失败: {f}", e)
                 continue
         return issues
 

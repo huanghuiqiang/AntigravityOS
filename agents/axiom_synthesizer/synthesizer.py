@@ -47,6 +47,13 @@ MAX_AXIOMS_BATCH = synth_max_batch()
 
 
 # ── Step 1: 收集碎片公理 ─────────────────────────────────────────
+def _warn(scope: str, detail: str, err: Exception | None = None):
+    if err is None:
+        print(f"  ⚠️ [{scope}] {detail}")
+    else:
+        print(f"  ⚠️ [{scope}] {detail}: {err}")
+
+
 
 def collect_raw_axioms() -> list[dict]:
     """
@@ -107,8 +114,8 @@ def collect_raw_axioms() -> list[dict]:
                 "title": str(fm.get("title", f.stem)),
                 "path": str(f)
             })
-        except Exception:
-            pass
+        except Exception as e:
+            _warn("synthesizer/collect", f"解析笔记失败: {f}", e)
 
     def _scan_dir(d: Path):
         for f in d.iterdir():

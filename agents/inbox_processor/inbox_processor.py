@@ -41,16 +41,26 @@ NLM_TIMEOUT = int(os.getenv("NLM_TIMEOUT", "900"))
 ARCHIVE_DONE = os.getenv("INBOX_ARCHIVE_DONE", "true").lower() == "true"
 
 # ── NotebookLM 集成 ───────────────────────────────────────────────
+def _warn(scope: str, detail: str):
+    print(f"    ⚠️ [{scope}] {detail}")
+
 
 def _run(cmd: list[str], timeout: int = 60) -> tuple[int, str, str]:
     """运行子命令，返回 (returncode, stdout, stderr)。"""
-    result = subprocess.run(
-        cmd,
-        capture_output=True,
-        text=True,
-        timeout=timeout,
-    )
-    return result.returncode, result.stdout.strip(), result.stderr.strip()
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+        return result.returncode, result.stdout.strip(), result.stderr.strip()
+    except subprocess.TimeoutExpired as e:
+        return 2, "", f"命令超时({timeout}s): {' '.join(cmd)} | {e}"
+    except FileNotFoundError:
+        return 127, "", f"命令不存在: {cmd[0]}"
+    except Exception as e:
+        return 1, "", f"命令执行异常: {' '.join(cmd)} | {e}"
 
 
 def process_with_notebooklm(title: str, source_url: str, note_path: str) -> dict:
@@ -103,8 +113,8 @@ def process_with_notebooklm(title: str, source_url: str, note_path: str) -> dict
                         print(f"    ✅ Source 处理完毕")
                     else:
                         print(f"    ⚠️  Source 处理超时，继续生成...")
-            except (json.JSONDecodeError, KeyError):
-                pass
+            except (json.JSONDecodeError, KeyError) as e:
+                _warn("inbox/source_add", f"解析 source 响应失败，继续后续流程: {e}")
     else:
         print(f"    ⚠️  无源 URL，直接生成报告...")
 

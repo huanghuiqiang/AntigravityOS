@@ -90,6 +90,11 @@ class StatsReport:
 
 
 # ── 内部工具 ──────────────────────────────────────────────────────
+def _warn(scope: str, detail: str, err: Exception | None = None):
+    if err is None:
+        print(f"  ⚠️ [{scope}] {detail}")
+    else:
+        print(f"  ⚠️ [{scope}] {detail}: {err}")
 
 def _parse_bouncer_log() -> list[CronRun]:
     """从 bouncer.log 提取历史运行记录。"""
@@ -108,8 +113,8 @@ def _parse_bouncer_log() -> list[CronRun]:
         scanned = int(scanned_match.group(1)) if scanned_match else 0
         golden = int(golden_match.group(1)) if golden_match else 0
         runs.append(CronRun(agent="bouncer", time=mtime, scanned=scanned, golden=golden))
-    except Exception:
-        pass
+    except Exception as e:
+        _warn("stats/bouncer_log", f"解析日志失败: {BOUNCER_LOG}", e)
     return runs
 
 
@@ -120,8 +125,8 @@ def _parse_inbox_log() -> list[CronRun]:
     try:
         mtime = datetime.fromtimestamp(INBOX_LOG.stat().st_mtime)
         runs.append(CronRun(agent="inbox_processor", time=mtime))
-    except Exception:
-        pass
+    except Exception as e:
+        _warn("stats/inbox_log", f"解析日志失败: {INBOX_LOG}", e)
     return runs
 
 
@@ -143,6 +148,7 @@ def collect() -> StatsReport:
                     content = f.read_text(encoding="utf-8", errors="ignore")
                     fm, _ = parse_frontmatter(content)
                     if not fm:
+                        _warn("stats/scan_note", f"frontmatter 缺失，跳过: {f}")
                         continue
 
                     tags = fm.get("tags", [])
@@ -162,8 +168,8 @@ def collect() -> StatsReport:
                         tags=tags,
                         is_clip="WebClip" in tags,
                     ))
-                except Exception:
-                    pass
+                except Exception as e:
+                    _warn("stats/scan_note", f"解析失败: {f}", e)
 
     if INBOX_DIR.exists():
         _scan_dir(INBOX_DIR)
