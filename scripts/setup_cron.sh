@@ -37,10 +37,10 @@ CRON_BRIEFING="50 7 * * *  cd $ROOT && PYTHONPATH=$ROOT $PYTHON agents/daily_bri
 CRON_BOUNCER="0 8 * * *   cd $ROOT && PYTHONPATH=$ROOT $PYTHON agents/cognitive_bouncer/bouncer.py >> $LOG_DIR/bouncer.log 2>&1"
 
 # 09:00 每周一 - Knowledge Auditor：知识库审计周报
-CRON_AUDIT="0 9 * * 1    cd $ROOT && PYTHONPATH=$ROOT $PYTHON agents/knowledge_auditor/auditor.py >> $LOG_DIR/auditor.log 2>&1"
+CRON_AUDIT="0 9 * * 1    cd $ROOT && PYTHONPATH=$ROOT $PYTHON agents/knowledge_auditor/auditor.py >> $LOG_DIR/knowledge_auditor.log 2>&1"
 
 # 每 4 小时 - Knowledge Auditor (Alert Mode)：静默巡检，健康度低时报警
-CRON_ALERT="0 */4 * * *  cd $ROOT && PYTHONPATH=$ROOT $PYTHON agents/knowledge_auditor/auditor.py --alert >> $LOG_DIR/auditor.log 2>&1"
+CRON_ALERT="0 */4 * * *  cd $ROOT && PYTHONPATH=$ROOT $PYTHON agents/knowledge_auditor/auditor.py --alert >> $LOG_DIR/knowledge_auditor.log 2>&1"
 
 # 10:30 - Inbox Processor：NotebookLM 合成 + 归档 + 通知
 CRON_INBOX="30 10 * * *  cd $ROOT && PYTHONPATH=$ROOT $PYTHON agents/inbox_processor/inbox_processor.py >> $LOG_DIR/inbox_processor.log 2>&1"

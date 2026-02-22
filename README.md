@@ -55,12 +55,12 @@ Antigravity OS
 git clone --recurse-submodules git@github.com:huanghuiqiang/AntigravityOS.git
 cd AntigravityOS
 
-# 安装依赖
-pip install pyyaml python-dotenv requests httpx beautifulsoup4 trafilatura
+# 安装依赖（推荐）
+pip install -e .
 
-# 配置 API Key（复制 bouncer 的 .env）
-cp agents/cognitive_bouncer/.env.example agents/cognitive_bouncer/.env
-# 填入 GEMINI_API_KEY 和 TELEGRAM_CHAT_ID
+# 配置环境变量
+cp .env.example .env
+# 至少填入 OPENROUTER_API_KEY / TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID
 ```
 
 ### 安装定时任务

@@ -21,9 +21,7 @@ Antigravity OS  |  Web Clipper Skill
   pip install trafilatura httpx pyyaml python-dotenv requests
 """
 
-import os
 import re
-import sys
 import json
 import argparse
 import requests
@@ -32,27 +30,15 @@ from pathlib import Path
 from datetime import datetime
 from typing import Optional
 
-# ── 路径初始化（允许独立运行或作为模块 import）────────────────────
-_THIS_DIR = Path(__file__).parent
-_ROOT     = _THIS_DIR.parent.parent
-sys.path.insert(0, str(_ROOT))
-
-from dotenv import load_dotenv
-load_dotenv(_ROOT / "agents/cognitive_bouncer/.env")
-
 # ── 导入内部工具 ──────────────────────────────────────────────────
-from skills.obsidian_bridge.bridge import write_note, get_vault
-
-# 复用 bouncer 的 Telegram 模块
-_BOUNCER_DIR = _ROOT / "agents/cognitive_bouncer"
-sys.path.insert(0, str(_BOUNCER_DIR))
-from telegram_notify import send_message
+from agos.config import inbox_path, min_score_threshold, model_bouncer, openrouter_api_key
+from agos.notify import send_message
 
 # ── 配置 ──────────────────────────────────────────────────────────
-MIN_SCORE_INBOX = float(os.getenv("CLIPPER_MIN_SCORE", "8.0"))   # 低于此分只通知，不写 Inbox
-OPENROUTER_KEY  = os.getenv("GEMINI_API_KEY", "")
-MODEL           = "google/gemini-2.0-flash-001"
-INBOX_DIR       = os.getenv("OBSIDIAN_VAULT", str(get_vault())) + "/00_Inbox"
+MIN_SCORE_INBOX = min_score_threshold()  # 低于此分只通知，不写 Inbox
+OPENROUTER_KEY = openrouter_api_key()
+MODEL = model_bouncer()
+INBOX_DIR = inbox_path()
 
 # ── 正文提取 ──────────────────────────────────────────────────────
 
@@ -130,7 +116,7 @@ def evaluate(title: str, text: str) -> Optional[dict]:
     Returns: {"score": float, "reason": str, "axiom_extracted": str} or None
     """
     if not OPENROUTER_KEY:
-        print("  ❌ 未找到 GEMINI_API_KEY，请配置 .env")
+        print("  ❌ 未找到 OPENROUTER_API_KEY（兼容 GEMINI_API_KEY）")
         return None
 
     eval_text = f"Title: {title}\nBody Snippet:\n{text[:3000]}"
@@ -185,7 +171,7 @@ def write_to_inbox(
     """
     safe_title = re.sub(r'[\\/*?:"<>|]', "", title)[:60].strip() or "Untitled"
     filename   = f"Clip - {safe_title}.md"
-    filepath   = os.path.join(INBOX_DIR, filename)
+    filepath = INBOX_DIR / filename
 
     today = datetime.now().strftime("%Y-%m-%d")
     meta_author = f"\n**作者**: {author}" if author else ""
@@ -213,10 +199,10 @@ created: "{today}"
 > {reason}
 """
 
-    os.makedirs(INBOX_DIR, exist_ok=True)
-    Path(filepath).write_text(content, encoding="utf-8")
+    INBOX_DIR.mkdir(parents=True, exist_ok=True)
+    filepath.write_text(content, encoding="utf-8")
     print(f"  📥 已写入 Inbox: {filename}")
-    return filepath
+    return str(filepath)
 
 
 # ── Telegram 通知 ─────────────────────────────────────────────────

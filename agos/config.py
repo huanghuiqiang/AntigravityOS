@@ -8,7 +8,6 @@ agos.config
 
 import os
 from pathlib import Path
-from functools import lru_cache
 
 from dotenv import load_dotenv
 
@@ -47,6 +46,37 @@ def log_dir() -> Path:
     d = _PROJECT_ROOT / "data" / "logs"
     d.mkdir(parents=True, exist_ok=True)
     return d
+
+
+def state_dir() -> Path:
+    """运行时状态目录（如去重缓存、游标等）。"""
+    d = _PROJECT_ROOT / "data" / "state"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def agent_log_file(agent_name: str) -> Path:
+    """统一日志文件路径。"""
+    safe = agent_name.strip().replace(" ", "_").replace("-", "_")
+    return log_dir() / f"{safe}.log"
+
+
+def bouncer_log_file() -> Path:
+    return log_dir() / "bouncer.log"
+
+
+def inbox_processor_log_file() -> Path:
+    return log_dir() / "inbox_processor.log"
+
+
+def bouncer_state_file() -> Path:
+    """Bouncer 去重 URL 状态文件。"""
+    return state_dir() / "processed_urls.json"
+
+
+def bouncer_feed_config_file() -> Path:
+    """Bouncer RSS 配置文件。"""
+    return _PROJECT_ROOT / "agents" / "cognitive_bouncer" / "config.json"
 
 
 # ── API Keys ──────────────────────────────────────────────────────

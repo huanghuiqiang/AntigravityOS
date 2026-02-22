@@ -3,25 +3,35 @@ stats.py ── Antigravity OS 数据收集共享层
 A/B 两种仪表盘都从这里读数据，保持逻辑统一。
 """
 
-import os
 import re
-import sys
 import json
+import sys
 from pathlib import Path
 from datetime import datetime, timedelta
 from collections import defaultdict, Counter
 from dataclasses import dataclass, field
-from typing import Optional, List, Dict
+from typing import Optional
 
-from agos.config import vault_path, log_dir, project_root
+from agos.config import (
+    project_root,
+    vault_path,
+    inbox_folder,
+    inbox_path,
+    bouncer_log_file,
+    inbox_processor_log_file,
+)
 from agos.frontmatter import parse_frontmatter
 
 # ── 路径 ─────────────────────────────────────────────────────────
-_ROOT = project_root()
+ROOT = project_root()
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
 VAULT = vault_path()
-INBOX_DIR = VAULT / "00_Inbox"
-LOG_DIR = log_dir()
-BOUNCER_LOG = _ROOT / "agents" / "cognitive_bouncer" / "bouncer.log"
+INBOX_DIR = inbox_path()
+INBOX_FOLDER = inbox_folder()
+BOUNCER_LOG = bouncer_log_file()
+INBOX_LOG = inbox_processor_log_file()
 
 
 # ── 数据结构 ──────────────────────────────────────────────────────
@@ -88,13 +98,15 @@ def _parse_bouncer_log() -> list[CronRun]:
         return runs
 
     content = BOUNCER_LOG.read_text(encoding="utf-8", errors="ignore")
-    scanned_re = re.compile(r"本次共审查\s*(\d+)\s*篇")
+    scanned_re = re.compile(r"(?:本次)?共审查\s*(\d+)\s*篇")
     golden_re  = re.compile(r"高认知密度文章:\s*(\d+)")
 
     try:
         mtime = datetime.fromtimestamp(BOUNCER_LOG.stat().st_mtime)
-        scanned = int((scanned_re.search(content) or type('', (), {'group': lambda s, x: '0'})()).group(1))
-        golden  = int((golden_re.search(content) or type('', (), {'group': lambda s, x: '0'})()).group(1))
+        scanned_match = scanned_re.search(content)
+        golden_match = golden_re.search(content)
+        scanned = int(scanned_match.group(1)) if scanned_match else 0
+        golden = int(golden_match.group(1)) if golden_match else 0
         runs.append(CronRun(agent="bouncer", time=mtime, scanned=scanned, golden=golden))
     except Exception:
         pass
@@ -103,11 +115,10 @@ def _parse_bouncer_log() -> list[CronRun]:
 
 def _parse_inbox_log() -> list[CronRun]:
     runs = []
-    log_path = LOG_DIR / "inbox_processor.log"
-    if not log_path.exists():
+    if not INBOX_LOG.exists():
         return runs
     try:
-        mtime = datetime.fromtimestamp(log_path.stat().st_mtime)
+        mtime = datetime.fromtimestamp(INBOX_LOG.stat().st_mtime)
         runs.append(CronRun(agent="inbox_processor", time=mtime))
     except Exception:
         pass

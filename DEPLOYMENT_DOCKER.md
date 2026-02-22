@@ -19,10 +19,8 @@ Antigravity OS uses an `.env` file for configuration, including API keys and pat
     ```
 2.  Edit the newly created `.env` file and fill in your details. At minimum, you will need to provide:
     *   `OPENROUTER_API_KEY`
-    *   `GEMINI_API_KEY`
     *   `TELEGRAM_BOT_TOKEN`
     *   `TELEGRAM_CHAT_ID`
-    *   `NOTEBOOKLM_AUTH_JSON` (Content of your `~/.notebooklm/storage_state.json` file for NotebookLM authentication in Docker)
     *   `OBSIDIAN_VAULT_HOST_PATH` (Absolute path to your Obsidian vault on your host machine, e.g., `/Users/youruser/Documents/Obsidian/YourVaultName`)
 
 ### 1.2. Obsidian Vault Path
@@ -85,9 +83,9 @@ You can view the real-time logs of the `scheduler` service using:
 ```bash
 docker compose logs -f scheduler
 ```
-Logs for individual agent runs (triggered by the scheduler or manually) will be written to `.data/logs` directory in your project root on the host machine, thanks to the bind mount. For example, to view logs for `cognitive-bouncer`:
+Logs for individual agent runs (triggered by the scheduler or manually) will be written to `./data/logs` in your project root on the host machine, thanks to the bind mount. For example, to view logs for `cognitive-bouncer`:
 ```bash
-tail -f ./data/logs/cognitive_bouncer.log
+tail -f ./data/logs/bouncer.log
 ```
 
 ## 5. Stopping Services

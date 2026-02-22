@@ -10,12 +10,12 @@ from pathlib import Path
 from datetime import datetime, timedelta
 from typing import List, Dict, Set
 
-from agos.config import vault_path, backlog_threshold_days
+from agos.config import vault_path, backlog_threshold_days, inbox_folder
 from agos.frontmatter import parse_frontmatter
 from agos.notify import send_message
 
 # ── 配置 ─────────────────────────────────────────────────────────
-INBOX_FOLDER = "00_Inbox"
+INBOX_FOLDER = inbox_folder()
 BACKLOG_THRESHOLD_DAYS = backlog_threshold_days()
 
 # ── 核心逻辑 ──────────────────────────────────────────────────────

@@ -7,10 +7,11 @@ scripts/init_env.sh 的 Python 替代版。
 import os
 import sys
 
-ROOT = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 os.environ["ANTIGRAVITY_ROOT"]  = ROOT
-os.environ["ANTIGRAVITY_INBOX"] = "/Users/hugh/Documents/Obsidian/AINotes/00_Inbox"
-os.environ["OBSIDIAN_VAULT"]    = "/Users/hugh/Documents/Obsidian/AINotes"
+os.environ["OBSIDIAN_VAULT"] = os.environ.get("OBSIDIAN_VAULT", f"{ROOT}/data/obsidian_inbox")
+os.environ["INBOX_FOLDER"] = os.environ.get("INBOX_FOLDER", "00_Inbox")
+os.environ["ANTIGRAVITY_INBOX"] = f"{os.environ['OBSIDIAN_VAULT']}/{os.environ['INBOX_FOLDER']}"
 
 # 把 ROOT 加入 PYTHONPATH（供子进程继承）
 existing = os.environ.get("PYTHONPATH", "")

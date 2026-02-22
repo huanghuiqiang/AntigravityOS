@@ -2,60 +2,72 @@ import schedule
 import time
 import subprocess
 import os
+from pathlib import Path
 from datetime import datetime
 
-# Change current working directory to /app (container's WORKDIR)
-os.chdir('/app')
+from agos.config import agent_log_file, project_root
+
+ROOT = project_root()
+PYTHON_BIN = os.getenv("PYTHON_BIN", "python")
 
 # Define agent commands and their log files
 AGENTS = {
     "daily-briefing": {
-        "command": ["python", "agents/daily_briefing/daily_briefing.py"],
-        "log_file": "daily_briefing.log",
+        "command": [PYTHON_BIN, "agents/daily_briefing/daily_briefing.py"],
+        "log_file": agent_log_file("daily_briefing"),
         "schedule": {"hour": 7, "minute": 50} # 07:50 AM
     },
     "cognitive-bouncer": {
-        "command": ["python", "agents/cognitive_bouncer/bouncer.py"],
-        "log_file": "cognitive_bouncer.log",
+        "command": [PYTHON_BIN, "agents/cognitive_bouncer/bouncer.py"],
+        "log_file": agent_log_file("bouncer"),
         "schedule": {"hour": 8, "minute": 0} # 08:00 AM
     },
     "knowledge-auditor": {
-        "command": ["python", "agents/knowledge_auditor/auditor.py"],
-        "log_file": "knowledge_auditor.log",
+        "command": [PYTHON_BIN, "agents/knowledge_auditor/auditor.py"],
+        "log_file": agent_log_file("knowledge_auditor"),
         "schedule": {"interval": 4, "unit": "hours"} # Every 4 hours
     },
     "inbox-processor": {
-        "command": ["python", "agents/inbox_processor/inbox_processor.py"],
-        "log_file": "inbox_processor.log",
+        "command": [PYTHON_BIN, "agents/inbox_processor/inbox_processor.py"],
+        "log_file": agent_log_file("inbox_processor"),
         "schedule": {"hour": 10, "minute": 30} # 10:30 AM
     },
     # axiom-synthesizer is manual, so no schedule here
 }
 
-LOG_DIR = os.path.join("/app", "data", "logs")
+LOG_DIR = ROOT / "data" / "logs"
 # Ensure LOG_DIR exists when scheduler starts
-if not os.path.exists(LOG_DIR):
-    os.makedirs(LOG_DIR)
+if not LOG_DIR.exists():
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
     print(f"Scheduler: Created log directory: {LOG_DIR}")
 else:
     print(f"Scheduler: Log directory already exists: {LOG_DIR}")
 print(f"Scheduler initialized. Log directory: {LOG_DIR}") # Existing print for debugging
 
 def run_agent(agent_name, command, log_file):
-    log_path = os.path.join(LOG_DIR, log_file)
+    log_path = Path(log_file)
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    print(f"[{timestamp}] Running agent: {agent_name} to {log_path}") # Added log_path for debugging
+    run_id = datetime.now().strftime("%Y%m%d%H%M%S")
+    print(f"[{timestamp}] Running agent: {agent_name} to {log_path}")
     try:
-        with open(log_path, "a") as f:
+        with log_path.open("a", encoding="utf-8") as f:
             f.write(f"""
---- Agent Run: {timestamp} ---
+--- Agent Run: {timestamp} | agent={agent_name} | run_id={run_id} ---
 """)
             try:
-                result = subprocess.run(command, capture_output=True, text=True, check=True, env=os.environ.copy()) # Added env for subprocess
+                result = subprocess.run(
+                    command,
+                    capture_output=True,
+                    text=True,
+                    check=True,
+                    env=os.environ.copy(),
+                    cwd=ROOT,
+                )
                 f.write(result.stdout)
                 if result.stderr:
                     f.write(f"""--- STDERR ---
 {result.stderr}""")
+                f.write(f"\n--- END run_id={run_id} | exit_code=0 ---\n")
                 print(f"[{timestamp}] Agent {agent_name} finished successfully.")
             except subprocess.CalledProcessError as e:
                 f.write(f"""--- ERROR ({e.returncode}) ---
@@ -63,16 +75,19 @@ STDOUT:
 {e.stdout}
 STDERR:
 {e.stderr}""")
+                f.write(f"\n--- END run_id={run_id} | exit_code={e.returncode} ---\n")
                 print(f"[{timestamp}] Agent {agent_name} failed with error: {e.returncode}. Check {log_path}")
             except FileNotFoundError:
                 f.write(f"""--- ERROR ---
 Command not found: {command[0]}
 """)
+                f.write(f"\n--- END run_id={run_id} | exit_code=127 ---\n")
                 print(f"[{timestamp}] Agent {agent_name} failed: Command not found - {command[0]}. Check {log_path}")
             except Exception as e:
                 f.write(f"""--- ERROR ---
 An unexpected error occurred: {e}
 """)
+                f.write(f"\n--- END run_id={run_id} | exit_code=1 ---\n")
                 print(f"[{timestamp}] Agent {agent_name} failed: An unexpected error occurred - {e}. Check {log_path}")
     except Exception as file_e:
         print(f"[{timestamp}] CRITICAL ERROR: Could not open/write to log file {log_path}: {file_e}")
@@ -100,10 +115,11 @@ def schedule_jobs():
 
 if __name__ == "__main__":
     print("🚀 Starting Python-based scheduler...")
-    # Add project root to PYTHONPATH explicitly for the scheduler process
-    # This might be redundant with docker's ENV PYTHONPATH, but good for safety
-    if "/app" not in os.environ.get("PYTHONPATH", "").split(os.pathsep):
-        os.environ["PYTHONPATH"] = f"/app{os.pathsep}{os.environ.get('PYTHONPATH', '')}"
+    # Ensure project root is visible for subprocess imports.
+    root_str = str(ROOT)
+    py_paths = os.environ.get("PYTHONPATH", "").split(os.pathsep) if os.environ.get("PYTHONPATH") else []
+    if root_str not in py_paths:
+        os.environ["PYTHONPATH"] = f"{root_str}{os.pathsep}{os.environ.get('PYTHONPATH', '')}".rstrip(os.pathsep)
 
     schedule_jobs()
 
