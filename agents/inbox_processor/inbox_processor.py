@@ -250,6 +250,10 @@ def process_note(note: dict, dry_run: bool = False) -> dict:
 def build_telegram_report(results: list[dict], total_pending: int) -> str:
     success_list = [r for r in results if r["success"]]
     fail_list = [r for r in results if not r["success"]]
+    fail_type_counter = {}
+    for r in fail_list:
+        key = r.get("error_type", "") or "unknown_error"
+        fail_type_counter[key] = fail_type_counter.get(key, 0) + 1
 
     lines = [
         "🧠 <b>Inbox Processor 报告</b>",
@@ -264,9 +268,13 @@ def build_telegram_report(results: list[dict], total_pending: int) -> str:
             lines.append(f"   📓 <code>{r['notebook_id'][:12]}...</code>")
 
     if fail_list:
+        lines.append("📌 失败类型统计：")
+        for err_type, count in sorted(fail_type_counter.items(), key=lambda x: x[0]):
+            lines.append(f"  • <code>{err_type}</code>: {count}")
         lines.append("\n⚠️ 失败条目：")
         for r in fail_list:
-            lines.append(f"  ❌ {r['title'][:40]} → {r['error'][:60]}")
+            e_type = r.get("error_type", "") or "unknown_error"
+            lines.append(f"  ❌ [{e_type}] {r['title'][:30]} → {r['error'][:50]}")
 
     return "\n".join(lines)
 

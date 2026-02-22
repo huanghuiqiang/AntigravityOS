@@ -91,10 +91,16 @@ class StatsReport:
 
 # ── 内部工具 ──────────────────────────────────────────────────────
 def _warn(scope: str, detail: str, err: Exception | None = None):
-    if err is None:
-        print(f"  ⚠️ [{scope}] {detail}")
-    else:
-        print(f"  ⚠️ [{scope}] {detail}: {err}")
+    payload = {
+        "ts": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "level": "WARN",
+        "scope": scope,
+        "detail": detail,
+    }
+    if err is not None:
+        payload["error"] = str(err)
+        payload["error_type"] = type(err).__name__
+    print(json.dumps(payload, ensure_ascii=False))
 
 def _parse_bouncer_log() -> list[CronRun]:
     """从 bouncer.log 提取历史运行记录。"""
