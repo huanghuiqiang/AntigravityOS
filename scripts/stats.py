@@ -14,6 +14,7 @@ from typing import Optional
 
 from agos.config import (
     project_root,
+    log_dir,
     vault_path,
     inbox_folder,
     inbox_path,
@@ -28,8 +29,6 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 INBOX_FOLDER = inbox_folder()
-BOUNCER_LOG = bouncer_log_file()
-INBOX_LOG = inbox_processor_log_file()
 
 
 # ── 数据结构 ──────────────────────────────────────────────────────
@@ -102,37 +101,56 @@ def _warn(scope: str, detail: str, err: Exception | None = None):
         payload["error_type"] = type(err).__name__
     print(json.dumps(payload, ensure_ascii=False))
 
+
+def _pick_latest_existing(paths: list[Path]) -> Path | None:
+    existing = [p for p in paths if p.exists()]
+    if not existing:
+        return None
+    return max(existing, key=lambda p: p.stat().st_mtime)
+
+
+def _bouncer_log_candidates() -> list[Path]:
+    # 兼容历史命名：cognitive_bouncer.log
+    return [bouncer_log_file(), log_dir() / "cognitive_bouncer.log"]
+
+
+def _inbox_log_candidates() -> list[Path]:
+    return [inbox_processor_log_file()]
+
+
 def _parse_bouncer_log() -> list[CronRun]:
     """从 bouncer.log 提取历史运行记录。"""
     runs = []
-    if not BOUNCER_LOG.exists():
+    log_path = _pick_latest_existing(_bouncer_log_candidates())
+    if log_path is None:
         return runs
 
-    content = BOUNCER_LOG.read_text(encoding="utf-8", errors="ignore")
+    content = log_path.read_text(encoding="utf-8", errors="ignore")
     scanned_re = re.compile(r"(?:本次)?共审查\s*(\d+)\s*篇")
     golden_re  = re.compile(r"高认知密度文章:\s*(\d+)")
 
     try:
-        mtime = datetime.fromtimestamp(BOUNCER_LOG.stat().st_mtime)
+        mtime = datetime.fromtimestamp(log_path.stat().st_mtime)
         scanned_match = scanned_re.search(content)
         golden_match = golden_re.search(content)
         scanned = int(scanned_match.group(1)) if scanned_match else 0
         golden = int(golden_match.group(1)) if golden_match else 0
         runs.append(CronRun(agent="bouncer", time=mtime, scanned=scanned, golden=golden))
     except Exception as e:
-        _warn("stats/bouncer_log", f"解析日志失败: {BOUNCER_LOG}", e)
+        _warn("stats/bouncer_log", f"解析日志失败: {log_path}", e)
     return runs
 
 
 def _parse_inbox_log() -> list[CronRun]:
     runs = []
-    if not INBOX_LOG.exists():
+    log_path = _pick_latest_existing(_inbox_log_candidates())
+    if log_path is None:
         return runs
     try:
-        mtime = datetime.fromtimestamp(INBOX_LOG.stat().st_mtime)
+        mtime = datetime.fromtimestamp(log_path.stat().st_mtime)
         runs.append(CronRun(agent="inbox_processor", time=mtime))
     except Exception as e:
-        _warn("stats/inbox_log", f"解析日志失败: {INBOX_LOG}", e)
+        _warn("stats/inbox_log", f"解析日志失败: {log_path}", e)
     return runs
 
 
