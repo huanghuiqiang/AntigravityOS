@@ -1,6 +1,7 @@
 """daily_briefing 报告内容测试。"""
 
 from types import SimpleNamespace
+from datetime import datetime, timedelta
 
 from agents.daily_briefing.daily_briefing import build_report, BACKLOG_THRESHOLD_DAYS
 
@@ -48,3 +49,25 @@ def test_build_report_uses_configurable_backlog_days():
     )
     text = build_report(r)
     assert f"超过 {BACKLOG_THRESHOLD_DAYS} 天" in text
+
+
+def test_build_report_flags_stale_cron():
+    r = SimpleNamespace(
+        health_score=88.0,
+        orphan_axioms=[],
+        backlog_issues=[],
+        error=0,
+        error_types={},
+        total=5,
+        pending=1,
+        done=4,
+        bottleneck="",
+        notes=[],
+        last_bouncer_run=datetime.now() - timedelta(hours=30),
+        last_inbox_run=None,
+        bouncer_7day=[1, 1, 0, 0, 1, 0, 1],
+        throughput_7day=[1, 0, 0, 0, 1, 0, 0],
+    )
+    text = build_report(r)
+    assert "Bouncer 超过 26h 未成功运行" in text
+    assert "Inbox Processor 超过 26h 未成功运行" in text

@@ -44,6 +44,12 @@ def fmt_cron_time(dt) -> str:
     return f"{status} {dt.strftime('%H:%M')} ({h:.0f}h 前)"
 
 
+def is_cron_stale(dt, max_hours: int = 26) -> bool:
+    if not dt:
+        return True
+    return (datetime.now() - dt).total_seconds() / 3600 >= max_hours
+
+
 # ── 报告生成 ──────────────────────────────────────────────────────
 
 def build_report(r) -> str:
@@ -64,6 +70,10 @@ def build_report(r) -> str:
         )
     if r.error > 0:
         alerts.append(f"❌ <b>损坏条目</b>：共有 {r.error} 条错误笔记待检查")
+    if is_cron_stale(r.last_bouncer_run):
+        alerts.append("🤖 <b>Cron 异常</b>：Bouncer 超过 26h 未成功运行")
+    if is_cron_stale(r.last_inbox_run):
+        alerts.append("🧠 <b>Cron 异常</b>：Inbox Processor 超过 26h 未成功运行")
 
     alert_section = ""
     if alerts:
