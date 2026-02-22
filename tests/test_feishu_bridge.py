@@ -63,7 +63,7 @@ def test_retry_on_429() -> None:
 
 def test_find_section_block_id() -> None:
     def handler(req: httpx.Request) -> httpx.Response:
-        if req.url.path.endswith("/open-apis/docx/v1/documents/doc-1/content"):
+        if req.url.path.endswith("/open-apis/docx/v1/documents/doc-1/blocks"):
             return httpx.Response(
                 200,
                 json={
@@ -268,3 +268,43 @@ def test_create_sub_doc_endpoint_returns_error_payload_when_env_missing(monkeypa
     assert resp.status_code == 200
     assert resp.json()["success"] is False
     assert "未配置" in resp.json()["message"]
+
+
+def test_append_markdown_uses_children_endpoint() -> None:
+    calls = {"convert": 0, "append": 0, "blocks": 0}
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        if req.url.path.endswith("/open-apis/docx/v1/documents/doc-1/blocks"):
+            calls["blocks"] += 1
+            return httpx.Response(
+                200,
+                json={"code": 0, "data": {"items": [{"block_id": "root_1", "block_type": 1, "parent_id": ""}]}},
+            )
+
+        if req.url.path.endswith("/open-apis/docx/v1/documents/convert"):
+            calls["convert"] += 1
+            return httpx.Response(
+                200,
+                json={"code": 0, "data": {"blocks": [{"block_type": 2, "text": {"elements": []}}]}},
+            )
+
+        expected = "/open-apis/docx/v1/documents/doc-1/blocks/root_1/children"
+        if req.url.path.endswith(expected):
+            calls["append"] += 1
+            return httpx.Response(
+                200,
+                json={"code": 0, "data": {"children": [{"block_id": "new_block_1"}]}},
+            )
+        raise AssertionError(f"unexpected {req.method} path: {req.url.path}")
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    bridge = FeishuDocBridge(BridgeConfig(app_id="id", app_secret="secret", document_id="doc-1"), client=client)
+    bridge._tenant_access_token = "token"
+    bridge._token_expire_at = 9999999999
+
+    result = bridge.append_markdown("test line")
+    assert result["success"] is True
+    assert result["block_id"] == "new_block_1"
+    assert calls["convert"] == 1
+    assert calls["blocks"] == 1
+    assert calls["append"] == 1

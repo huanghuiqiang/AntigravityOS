@@ -183,7 +183,7 @@ class FeishuDocBridge:
     def _list_blocks(self) -> list[dict[str, Any]]:
         data = self._request(
             "GET",
-            f"/open-apis/docx/v1/documents/{self.config.document_id}/content",
+            f"/open-apis/docx/v1/documents/{self.config.document_id}/blocks",
             params={"page_size": 500},
         ).get("data", {})
 
@@ -195,6 +195,25 @@ class FeishuDocBridge:
         if isinstance(data.get("block_map"), dict):
             return list(data["block_map"].values())
         return []
+
+    def _get_root_block_id(self) -> str:
+        blocks = self._list_blocks()
+        if not blocks:
+            raise FeishuBridgeError("文档块为空，无法定位根块")
+
+        for block in blocks:
+            parent_id = block.get("parent_id")
+            block_type = block.get("block_type")
+            block_id = block.get("block_id") or block.get("id")
+            if block_id and (parent_id in (None, "", self.config.document_id)) and block_type == 1:
+                return str(block_id)
+
+        # 回退：取第一个可用 block_id，避免因字段差异导致全失败。
+        for block in blocks:
+            block_id = block.get("block_id") or block.get("id")
+            if block_id:
+                return str(block_id)
+        raise FeishuBridgeError("无法解析文档根块 ID")
 
     @staticmethod
     def _extract_block_text(block: dict[str, Any]) -> str:
@@ -288,12 +307,12 @@ class FeishuDocBridge:
 
         parent_block_id = self._find_section_block_id(section_title or "")
         if not parent_block_id:
-            parent_block_id = self.config.document_id
+            parent_block_id = self._get_root_block_id()
 
         blocks = self._convert_markdown_to_blocks(markdown)
         resp = self._request(
             "POST",
-            f"/open-apis/docx/v1/documents/{self.config.document_id}/blocks/{parent_block_id}/children/batch_create",
+            f"/open-apis/docx/v1/documents/{self.config.document_id}/blocks/{parent_block_id}/children",
             json_body={"children": blocks},
         )
 
