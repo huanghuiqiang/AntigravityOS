@@ -311,6 +311,41 @@ class FeishuDocBridge:
             "count": len(blocks),
         }
 
+    def update_bitable(
+        self,
+        app_token: str,
+        table_id: str,
+        record_id: str,
+        fields: dict[str, Any],
+    ) -> dict[str, Any]:
+        if not app_token.strip():
+            raise FeishuBridgeError("app_token 不能为空")
+        if not table_id.strip():
+            raise FeishuBridgeError("table_id 不能为空")
+        if not record_id.strip():
+            raise FeishuBridgeError("record_id 不能为空")
+        if not isinstance(fields, dict) or not fields:
+            raise FeishuBridgeError("fields 不能为空且必须是对象")
+
+        # 优先 PATCH，部分租户仅支持 PUT 时自动回退。
+        path = f"/open-apis/bitable/v1/apps/{app_token}/tables/{table_id}/records/{record_id}"
+        payload = {"fields": fields}
+        try:
+            resp = self._request("PATCH", path, json_body=payload)
+        except FeishuBridgeError:
+            resp = self._request("PUT", path, json_body=payload)
+
+        data = resp.get("data", {})
+        record = data.get("record", {}) if isinstance(data, dict) else {}
+        return {
+            "success": True,
+            "message": "已更新",
+            "app_token": app_token,
+            "table_id": table_id,
+            "record_id": record_id,
+            "record": record,
+        }
+
 
 def build_bridge_from_env() -> FeishuDocBridge:
     return FeishuDocBridge(BridgeConfig.from_env())
