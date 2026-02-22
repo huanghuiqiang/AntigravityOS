@@ -9,7 +9,11 @@ from datetime import datetime, timedelta
 from urllib.parse import urlparse
 
 from scripts.stats import collect
+from agos.config import backlog_threshold_days
 from agos.notify import send_message
+
+
+BACKLOG_THRESHOLD_DAYS = backlog_threshold_days()
 
 
 # ── 格式化工具 ────────────────────────────────────────────────────
@@ -55,7 +59,9 @@ def build_report(r) -> str:
     if r.orphan_axioms:
         alerts.append(f"🕸 <b>知识孤岛</b>：{len(r.orphan_axioms)} 条公理未被引用")
     if r.backlog_issues:
-        alerts.append(f"⏳ <b>积压警报</b>：{len(r.backlog_issues)} 条已积压超过 10 天")
+        alerts.append(
+            f"⏳ <b>积压警报</b>：{len(r.backlog_issues)} 条已积压超过 {BACKLOG_THRESHOLD_DAYS} 天"
+        )
     if r.error > 0:
         alerts.append(f"❌ <b>损坏条目</b>：共有 {r.error} 条错误笔记待检查")
 

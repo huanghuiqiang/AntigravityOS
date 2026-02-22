@@ -2,7 +2,7 @@
 
 from types import SimpleNamespace
 
-from agents.daily_briefing.daily_briefing import build_report
+from agents.daily_briefing.daily_briefing import build_report, BACKLOG_THRESHOLD_DAYS
 
 
 def test_build_report_includes_error_type_top():
@@ -27,3 +27,24 @@ def test_build_report_includes_error_type_top():
     assert "失败类型 Top" in text
     assert "<code>report_wait_timeout</code>: 2" in text
     assert "<code>report_download_failed</code>: 1" in text
+
+
+def test_build_report_uses_configurable_backlog_days():
+    r = SimpleNamespace(
+        health_score=70.0,
+        orphan_axioms=[],
+        backlog_issues=[{"title": "x", "days": BACKLOG_THRESHOLD_DAYS + 1, "score": 8.1}],
+        error=0,
+        error_types={},
+        total=1,
+        pending=1,
+        done=0,
+        bottleneck="⏳ Pending 积压",
+        notes=[],
+        last_bouncer_run=None,
+        last_inbox_run=None,
+        bouncer_7day=[0, 0, 0, 0, 0, 0, 1],
+        throughput_7day=[0, 0, 0, 0, 0, 0, 0],
+    )
+    text = build_report(r)
+    assert f"超过 {BACKLOG_THRESHOLD_DAYS} 天" in text
