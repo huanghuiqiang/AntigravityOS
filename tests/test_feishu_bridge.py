@@ -222,3 +222,49 @@ def test_update_bitable_endpoint_returns_error_payload_when_env_missing(monkeypa
     assert resp.status_code == 200
     assert resp.json()["success"] is False
     assert "未配置" in resp.json()["message"]
+
+
+def test_create_sub_doc_success() -> None:
+    def handler(req: httpx.Request) -> httpx.Response:
+        if req.url.path.endswith("/open-apis/docx/v1/documents"):
+            assert req.method == "POST"
+            assert json.loads(req.content.decode("utf-8")) == {"title": "周报 - 2026-02-22"}
+            return httpx.Response(
+                200,
+                json={
+                    "code": 0,
+                    "data": {
+                        "document": {
+                            "document_id": "doc_new_1",
+                            "title": "周报 - 2026-02-22",
+                        }
+                    },
+                },
+            )
+        raise AssertionError(f"unexpected {req.method} path: {req.url.path}")
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    bridge = FeishuDocBridge(BridgeConfig(app_id="id", app_secret="secret"), client=client)
+    bridge._tenant_access_token = "token"
+    bridge._token_expire_at = 9999999999
+
+    result = bridge.create_sub_doc("周报 - 2026-02-22")
+    assert result["success"] is True
+    assert result["document_id"] == "doc_new_1"
+    assert "/docx/doc_new_1" in result["url"]
+
+
+def test_create_sub_doc_endpoint_returns_error_payload_when_env_missing(monkeypatch) -> None:
+    from skills.feishu_bridge import main as main_module
+
+    monkeypatch.setattr(
+        main_module,
+        "build_bridge_from_env",
+        lambda: (_ for _ in ()).throw(main_module.FeishuBridgeError("FEISHU_APP_ID / FEISHU_APP_SECRET 未配置")),
+    )
+
+    client = TestClient(app)
+    resp = client.post("/create_sub_doc", json={"title": "周报 - 2026-02-22"})
+    assert resp.status_code == 200
+    assert resp.json()["success"] is False
+    assert "未配置" in resp.json()["message"]

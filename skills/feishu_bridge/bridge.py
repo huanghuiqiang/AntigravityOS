@@ -346,6 +346,45 @@ class FeishuDocBridge:
             "record": record,
         }
 
+    def create_sub_doc(self, title: str, folder_token: str | None = None) -> dict[str, Any]:
+        if not title or not title.strip():
+            raise FeishuBridgeError("title 不能为空")
+
+        payload: dict[str, Any] = {"title": title.strip()}
+        if folder_token and folder_token.strip():
+            payload["folder_token"] = folder_token.strip()
+
+        resp = self._request(
+            "POST",
+            "/open-apis/docx/v1/documents",
+            json_body=payload,
+        )
+        data = resp.get("data", {})
+        document = data.get("document", {}) if isinstance(data, dict) else {}
+
+        document_id = (
+            document.get("document_id")
+            or data.get("document_id")
+            or document.get("token")
+            or data.get("token")
+            or ""
+        )
+        if not document_id:
+            raise FeishuBridgeError(f"创建子文档成功但未返回 document_id: {data}")
+
+        url = (
+            document.get("url")
+            or data.get("url")
+            or f"https://{self.config.base_url.removeprefix('https://')}/docx/{document_id}"
+        )
+        return {
+            "success": True,
+            "message": "已创建",
+            "title": title.strip(),
+            "document_id": document_id,
+            "url": url,
+        }
+
 
 def build_bridge_from_env() -> FeishuDocBridge:
     return FeishuDocBridge(BridgeConfig.from_env())

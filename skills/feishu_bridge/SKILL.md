@@ -17,6 +17,7 @@ description: 飞书文档桥接技能。提供本地 FastAPI 服务（127.0.0.1:
 - 本地优先：只监听 `127.0.0.1`，默认端口 `8001`。
 - 最小闭环：MVP 先覆盖 `append_markdown`、`read_doc`、`health`。
 - 扩展能力：支持 `update_bitable` 更新多维表格记录。
+- 扩展能力：支持 `create_sub_doc` 创建周报/里程碑子文档。
 - 容错优先：401/403 自动刷新 token，429 自动重试（3 次，1s 间隔）。
 
 ## 开发步骤（可落地）
@@ -58,6 +59,10 @@ curl -s -X POST http://127.0.0.1:8001/read_doc \
 curl -s -X POST http://127.0.0.1:8001/update_bitable \
   -H 'Content-Type: application/json' \
   -d '{"app_token":"app_x","table_id":"tbl_x","record_id":"rec_x","fields":{"Status":"Done"}}'
+
+curl -s -X POST http://127.0.0.1:8001/create_sub_doc \
+  -H 'Content-Type: application/json' \
+  -d '{"title":"周报 - 2026-02-22"}'
 ```
 
 ## Python API
@@ -70,6 +75,7 @@ print(bridge.health())
 print(bridge.append_markdown("- 自动写入一条日志", section_title="每日进度日志"))
 print(bridge.read_doc("markdown"))
 print(bridge.update_bitable("app_x", "tbl_x", "rec_x", {"Status": "Done"}))
+print(bridge.create_sub_doc("周报 - 2026-02-22"))
 bridge.close()
 ```
 

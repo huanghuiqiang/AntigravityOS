@@ -24,6 +24,11 @@ class UpdateBitableRequest(BaseModel):
     fields: dict
 
 
+class CreateSubDocRequest(BaseModel):
+    title: str
+    folder_token: str | None = None
+
+
 app = FastAPI(title="Local Feishu Document Bridge", version="1.0.0")
 
 
@@ -79,6 +84,22 @@ def update_bitable(payload: UpdateBitableRequest) -> dict:
             table_id=payload.table_id,
             record_id=payload.record_id,
             fields=payload.fields,
+        )
+    except FeishuBridgeError as exc:
+        return {"success": False, "message": str(exc)}
+    finally:
+        if bridge is not None:
+            bridge.close()
+
+
+@app.post("/create_sub_doc")
+def create_sub_doc(payload: CreateSubDocRequest) -> dict:
+    bridge = None
+    try:
+        bridge = build_bridge_from_env()
+        return bridge.create_sub_doc(
+            title=payload.title,
+            folder_token=payload.folder_token,
         )
     except FeishuBridgeError as exc:
         return {"success": False, "message": str(exc)}
