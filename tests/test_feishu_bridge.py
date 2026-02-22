@@ -145,6 +145,33 @@ def test_find_section_block_id() -> None:
     assert bridge._find_section_block_id("不存在") is None
 
 
+def test_find_section_block_id_with_normalized_title() -> None:
+    def handler(req: httpx.Request) -> httpx.Response:
+        if req.url.path.endswith("/open-apis/docx/v1/documents/doc-1/blocks"):
+            return httpx.Response(
+                200,
+                json={
+                    "code": 0,
+                    "data": {
+                        "items": [
+                            {
+                                "block_id": "b-4",
+                                "heading1": {"elements": [{"text_run": {"content": "4. 快速任务列表"}}]},
+                            }
+                        ]
+                    },
+                },
+            )
+        raise AssertionError(f"unexpected path: {req.url.path}")
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    bridge = FeishuDocBridge(BridgeConfig(app_id="id", app_secret="secret", document_id="doc-1"), client=client)
+    bridge._tenant_access_token = "token"
+    bridge._token_expire_at = 9999999999
+
+    assert bridge._find_section_block_id("快速任务列表") == "b-4"
+
+
 def test_health_returns_error_payload_when_env_missing(monkeypatch) -> None:
     from skills.feishu_bridge import main as main_module
 
@@ -439,3 +466,19 @@ def test_append_markdown_uses_children_endpoint() -> None:
     assert calls["convert"] == 1
     assert calls["blocks"] == 1
     assert calls["append"] == 1
+
+
+def test_append_markdown_raises_when_section_not_found() -> None:
+    def handler(req: httpx.Request) -> httpx.Response:
+        if req.url.path.endswith("/open-apis/docx/v1/documents/doc-1/blocks"):
+            return httpx.Response(200, json={"code": 0, "data": {"items": []}})
+        raise AssertionError(f"unexpected {req.method} path: {req.url.path}")
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    bridge = FeishuDocBridge(BridgeConfig(app_id="id", app_secret="secret", document_id="doc-1"), client=client)
+    bridge._tenant_access_token = "token"
+    bridge._token_expire_at = 9999999999
+
+    with pytest.raises(Exception) as exc:
+        bridge.append_markdown("line", section_title="不存在章节")
+    assert "section 不存在" in str(exc.value)

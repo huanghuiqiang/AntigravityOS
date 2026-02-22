@@ -7,6 +7,7 @@ one fixed Feishu doc. It is used by the skill CLI and FastAPI service.
 from __future__ import annotations
 
 import os
+import re
 import time
 from dataclasses import dataclass
 from typing import Any
@@ -254,14 +255,23 @@ class FeishuDocBridge:
                 chunks.append(content)
         return "".join(chunks).strip()
 
+    @staticmethod
+    def _normalize_section_title(text: str) -> str:
+        s = (text or "").strip()
+        # Drop common heading prefixes like "4. " / "3) " / "第4节 ".
+        s = re.sub(r"^(第\s*\d+\s*[章节部分]|[0-9]+[\.\)\-、])\s*", "", s)
+        s = re.sub(r"\s+", "", s)
+        return s.lower()
+
     def _find_section_block_id(self, section_title: str) -> str | None:
         if not section_title:
             return None
 
         target = section_title.strip()
+        normalized_target = self._normalize_section_title(target)
         for block in self._list_blocks():
             text = self._extract_block_text(block)
-            if text == target:
+            if text == target or self._normalize_section_title(text) == normalized_target:
                 block_id = block.get("block_id") or block.get("id")
                 if block_id:
                     return str(block_id)
@@ -329,6 +339,8 @@ class FeishuDocBridge:
 
         parent_block_id = self._find_section_block_id(section_title or "")
         if not parent_block_id:
+            if section_title and section_title.strip():
+                raise FeishuBridgeError(f"section 不存在: {section_title}")
             parent_block_id = self._get_root_block_id()
 
         blocks = self._convert_markdown_to_blocks(markdown)
