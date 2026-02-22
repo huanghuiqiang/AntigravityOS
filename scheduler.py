@@ -77,6 +77,7 @@ An unexpected error occurred: {e}
     except Exception as file_e:
         print(f"[{timestamp}] CRITICAL ERROR: Could not open/write to log file {log_path}: {file_e}")
 
+
 def schedule_jobs():
     for agent_name, config in AGENTS.items():
         command = config["command"]
@@ -95,8 +96,6 @@ def schedule_jobs():
             # Add other units if needed (e.g., minutes, days)
         else:
             print(f"Warning: No valid schedule found for {agent_name}")
-
-    # Schedule the test log writer to run every minute
 
 
 if __name__ == "__main__":
