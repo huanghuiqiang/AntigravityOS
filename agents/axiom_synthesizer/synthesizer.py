@@ -178,10 +178,33 @@ SYNTHESIS_PROMPT = """
 
 
 def synthesize_with_llm(raw_axioms: list[dict], existing_titles: set[str]) -> tuple[list[dict], list[str]]:
+    result = synthesize_with_llm_result(raw_axioms, existing_titles)
+    return result["synthesized"], result["processed_paths"]
+
+
+def synthesize_with_llm_result(raw_axioms: list[dict], existing_titles: set[str]) -> dict:
+    """
+    结构化返回：
+      {
+        "ok": bool,
+        "synthesized": list[dict],
+        "processed_paths": list[str],
+        "error_type": str,
+        "error_message": str,
+        "error_context": dict,
+      }
+    """
     api_key = openrouter_api_key()
     if not api_key:
-        print("  ❌ 未找到 API Key")
-        return [], []
+        _warn("synthesizer/llm", "缺少 API Key")
+        return {
+            "ok": False,
+            "synthesized": [],
+            "processed_paths": [],
+            "error_type": "missing_api_key",
+            "error_message": "未找到 OPENROUTER_API_KEY / GEMINI_API_KEY",
+            "error_context": {},
+        }
 
     unique_axioms = []
     seen = set()
@@ -222,8 +245,16 @@ def synthesize_with_llm(raw_axioms: list[dict], existing_titles: set[str]) -> tu
             )
 
         if resp.status_code != 200:
-            print(f"  ❌ LLM 响应异常: HTTP {resp.status_code}")
-            return [], []
+            msg = f"LLM 响应异常: HTTP {resp.status_code}"
+            _warn("synthesizer/llm", msg)
+            return {
+                "ok": False,
+                "synthesized": [],
+                "processed_paths": processed_paths,
+                "error_type": "llm_http_error",
+                "error_message": msg,
+                "error_context": {"status_code": resp.status_code, "body": resp.text[:500]},
+            }
 
         raw_out = resp.json()["choices"][0]["message"]["content"]
         clean = raw_out.strip().lstrip("```json").lstrip("```").rstrip("```").strip()
@@ -238,11 +269,25 @@ def synthesize_with_llm(raw_axioms: list[dict], existing_titles: set[str]) -> tu
                 parsed = []
 
         print(f"  ✅ 合成出 {len(parsed)} 条候选公理")
-        return parsed, processed_paths
+        return {
+            "ok": True,
+            "synthesized": parsed if isinstance(parsed, list) else [],
+            "processed_paths": processed_paths,
+            "error_type": "",
+            "error_message": "",
+            "error_context": {},
+        }
 
     except Exception as e:
-        print(f"  ❌ LLM 合成出错: {e}")
-        return [], []
+        _warn("synthesizer/llm", "LLM 合成出错", e)
+        return {
+            "ok": False,
+            "synthesized": [],
+            "processed_paths": processed_paths,
+            "error_type": "llm_request_exception",
+            "error_message": str(e),
+            "error_context": {},
+        }
 
 
 # ── Step 4: 更新认知地图 ─────────────────────────────────────────
@@ -412,7 +457,19 @@ def main(dry_run: bool = False, create_notes: bool = True):
     print(f"  🗺️  认知地图已有 {len(existing_titles)} 条公理")
 
     # 3. LLM 合成
-    synthesized, processed_paths = synthesize_with_llm(raw_axioms, existing_titles)
+    llm_result = synthesize_with_llm_result(raw_axioms, existing_titles)
+    synthesized = llm_result["synthesized"]
+    processed_paths = llm_result["processed_paths"]
+    if not llm_result["ok"]:
+        print(
+            f"\n⚠️  LLM 合成失败: "
+            f"type={llm_result['error_type']} "
+            f"message={llm_result['error_message']}"
+        )
+        if not dry_run and processed_paths:
+            mark_as_synthesized(processed_paths)
+        notify([], [], len(raw_axioms), dry_run)
+        return
     if not synthesized:
         print("\n⚠️  LLM 未合成出新公理。")
         if not dry_run and processed_paths:
