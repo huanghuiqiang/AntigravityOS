@@ -15,10 +15,12 @@ from skills.feishu_bridge.bridge import FeishuAPIError, FeishuBridgeError, build
 class AppendMarkdownRequest(BaseModel):
     markdown: str
     section_title: str | None = None
+    document_id: str | None = None
 
 
 class ReadDocRequest(BaseModel):
     format: str = "markdown"
+    document_id: str | None = None
 
 
 class UpdateBitableRequest(BaseModel):
@@ -127,6 +129,7 @@ async def append_markdown(payload: AppendMarkdownRequest) -> dict:
             "append_markdown",
             markdown=payload.markdown,
             section_title=payload.section_title,
+            document_id=payload.document_id,
         )
     except FeishuBridgeError as exc:
         return _error_response(exc)
@@ -141,16 +144,17 @@ async def read_doc(payload: ReadDocRequest) -> dict:
             "read_doc_async",
             "read_doc",
             format_type=payload.format,
+            document_id=payload.document_id,
         )
     except FeishuBridgeError as exc:
         return _error_response(exc)
 
 
 @app.post("/health")
-async def health() -> dict:
+async def health(document_id: str | None = None) -> dict:
     try:
         bridge = _get_bridge()
-        return await _call_bridge(bridge, "health_async", "health")
+        return await _call_bridge(bridge, "health_async", "health", document_id=document_id)
     except FeishuBridgeError as exc:
         return _error_response(exc)
 

@@ -563,6 +563,22 @@ def test_diagnose_permissions_with_bitable_target() -> None:
     assert checks["bitable_write_ok"] is True
 
 
+def test_read_doc_supports_document_override() -> None:
+    def handler(req: httpx.Request) -> httpx.Response:
+        if req.url.path.endswith("/open-apis/docx/v1/documents/doc-override/raw_content"):
+            return httpx.Response(200, json={"code": 0, "data": {"content": "override-content"}})
+        raise AssertionError(f"unexpected {req.method} path: {req.url.path}")
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    bridge = FeishuDocBridge(BridgeConfig(app_id="id", app_secret="secret", document_id="doc-default"), client=client)
+    bridge._tenant_access_token = "token"
+    bridge._token_expire_at = 9999999999
+
+    result = bridge.read_doc(format_type="markdown", document_id="doc-override")
+    assert result["success"] is True
+    assert result["content"] == "override-content"
+
+
 def test_health_contains_probe_breakdown() -> None:
     def handler(req: httpx.Request) -> httpx.Response:
         path = req.url.path

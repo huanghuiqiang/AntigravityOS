@@ -118,6 +118,9 @@ class FeishuDocBridge:
         await self._async_client.aclose()
         self._client.close()
 
+    def _doc_id(self, document_id: str | None = None) -> str:
+        return (document_id or self.config.document_id).strip()
+
     def _needs_token_refresh(self) -> bool:
         return (not self._tenant_access_token) or (time.time() >= self._token_expire_at)
 
@@ -416,24 +419,27 @@ class FeishuDocBridge:
             trace_id=trace_id,
         )
 
-    def get_document_meta(self) -> dict[str, Any]:
+    def get_document_meta(self, document_id: str | None = None) -> dict[str, Any]:
+        doc_id = self._doc_id(document_id)
         return self._request(
             "GET",
-            f"/open-apis/docx/v1/documents/{self.config.document_id}",
+            f"/open-apis/docx/v1/documents/{doc_id}",
         ).get("data", {})
 
-    async def get_document_meta_async(self) -> dict[str, Any]:
+    async def get_document_meta_async(self, document_id: str | None = None) -> dict[str, Any]:
+        doc_id = self._doc_id(document_id)
         return (await self._request_async(
             "GET",
-            f"/open-apis/docx/v1/documents/{self.config.document_id}",
+            f"/open-apis/docx/v1/documents/{doc_id}",
         )).get("data", {})
 
-    def health(self) -> dict[str, Any]:
-        meta = self.get_document_meta()
+    def health(self, document_id: str | None = None) -> dict[str, Any]:
+        doc_id = self._doc_id(document_id)
+        meta = self.get_document_meta(doc_id)
         title = meta.get("document", {}).get("title", "")
         probes = {"read_ok": True, "write_ok": False, "bitable_ok": False}
         try:
-            diag = self.diagnose_permissions(document_id=self.config.document_id)
+            diag = self.diagnose_permissions(document_id=doc_id)
             checks = diag.get("checks", {}) if isinstance(diag, dict) else {}
             probes["read_ok"] = bool(checks.get("doc_read_ok", False))
             probes["write_ok"] = bool(checks.get("doc_write_ok", False))
@@ -444,18 +450,19 @@ class FeishuDocBridge:
             pass
         return {
             "success": True,
-            "document_id": self.config.document_id,
+            "document_id": doc_id,
             "title": title,
             "message": "service ok",
             "probes": probes,
         }
 
-    async def health_async(self) -> dict[str, Any]:
-        meta = await self.get_document_meta_async()
+    async def health_async(self, document_id: str | None = None) -> dict[str, Any]:
+        doc_id = self._doc_id(document_id)
+        meta = await self.get_document_meta_async(doc_id)
         title = meta.get("document", {}).get("title", "")
         probes = {"read_ok": True, "write_ok": False, "bitable_ok": False}
         try:
-            diag = await self.diagnose_permissions_async(document_id=self.config.document_id)
+            diag = await self.diagnose_permissions_async(document_id=doc_id)
             checks = diag.get("checks", {}) if isinstance(diag, dict) else {}
             probes["read_ok"] = bool(checks.get("doc_read_ok", False))
             probes["write_ok"] = bool(checks.get("doc_write_ok", False))
@@ -464,18 +471,19 @@ class FeishuDocBridge:
             pass
         return {
             "success": True,
-            "document_id": self.config.document_id,
+            "document_id": doc_id,
             "title": title,
             "message": "service ok",
             "probes": probes,
         }
 
-    def read_doc(self, format_type: str = "markdown") -> dict[str, Any]:
+    def read_doc(self, format_type: str = "markdown", document_id: str | None = None) -> dict[str, Any]:
+        doc_id = self._doc_id(document_id)
         fmt = (format_type or "markdown").lower()
         if fmt == "markdown":
             raw = self._request(
                 "GET",
-                f"/open-apis/docx/v1/documents/{self.config.document_id}/raw_content",
+                f"/open-apis/docx/v1/documents/{doc_id}/raw_content",
             )
             return {
                 "success": True,
@@ -485,7 +493,7 @@ class FeishuDocBridge:
 
         content = self._request(
             "GET",
-            f"/open-apis/docx/v1/documents/{self.config.document_id}/content",
+            f"/open-apis/docx/v1/documents/{doc_id}/content",
             params={"page_size": 500},
         )
         return {
@@ -494,12 +502,13 @@ class FeishuDocBridge:
             "content": content.get("data", {}),
         }
 
-    async def read_doc_async(self, format_type: str = "markdown") -> dict[str, Any]:
+    async def read_doc_async(self, format_type: str = "markdown", document_id: str | None = None) -> dict[str, Any]:
+        doc_id = self._doc_id(document_id)
         fmt = (format_type or "markdown").lower()
         if fmt == "markdown":
             raw = await self._request_async(
                 "GET",
-                f"/open-apis/docx/v1/documents/{self.config.document_id}/raw_content",
+                f"/open-apis/docx/v1/documents/{doc_id}/raw_content",
             )
             return {
                 "success": True,
@@ -508,7 +517,7 @@ class FeishuDocBridge:
             }
         content = await self._request_async(
             "GET",
-            f"/open-apis/docx/v1/documents/{self.config.document_id}/content",
+            f"/open-apis/docx/v1/documents/{doc_id}/content",
             params={"page_size": 500},
         )
         return {
@@ -517,10 +526,11 @@ class FeishuDocBridge:
             "content": content.get("data", {}),
         }
 
-    def _list_blocks(self) -> list[dict[str, Any]]:
+    def _list_blocks(self, document_id: str | None = None) -> list[dict[str, Any]]:
+        doc_id = self._doc_id(document_id)
         data = self._request(
             "GET",
-            f"/open-apis/docx/v1/documents/{self.config.document_id}/blocks",
+            f"/open-apis/docx/v1/documents/{doc_id}/blocks",
             params={"page_size": 500},
         ).get("data", {})
 
@@ -533,10 +543,11 @@ class FeishuDocBridge:
             return list(data["block_map"].values())
         return []
 
-    async def _list_blocks_async(self) -> list[dict[str, Any]]:
+    async def _list_blocks_async(self, document_id: str | None = None) -> list[dict[str, Any]]:
+        doc_id = self._doc_id(document_id)
         data = (await self._request_async(
             "GET",
-            f"/open-apis/docx/v1/documents/{self.config.document_id}/blocks",
+            f"/open-apis/docx/v1/documents/{doc_id}/blocks",
             params={"page_size": 500},
         )).get("data", {})
         if isinstance(data.get("items"), list):
@@ -547,8 +558,9 @@ class FeishuDocBridge:
             return list(data["block_map"].values())
         return []
 
-    def _get_root_block_id(self) -> str:
-        blocks = self._list_blocks()
+    def _get_root_block_id(self, document_id: str | None = None) -> str:
+        doc_id = self._doc_id(document_id)
+        blocks = self._list_blocks(doc_id)
         if not blocks:
             raise FeishuBridgeError("文档块为空，无法定位根块")
 
@@ -556,7 +568,7 @@ class FeishuDocBridge:
             parent_id = block.get("parent_id")
             block_type = block.get("block_type")
             block_id = block.get("block_id") or block.get("id")
-            if block_id and (parent_id in (None, "", self.config.document_id)) and block_type == 1:
+            if block_id and (parent_id in (None, "", doc_id)) and block_type == 1:
                 return str(block_id)
 
         # 回退：取第一个可用 block_id，避免因字段差异导致全失败。
@@ -566,15 +578,16 @@ class FeishuDocBridge:
                 return str(block_id)
         raise FeishuBridgeError("无法解析文档根块 ID")
 
-    async def _get_root_block_id_async(self) -> str:
-        blocks = await self._list_blocks_async()
+    async def _get_root_block_id_async(self, document_id: str | None = None) -> str:
+        doc_id = self._doc_id(document_id)
+        blocks = await self._list_blocks_async(doc_id)
         if not blocks:
             raise FeishuBridgeError("文档块为空，无法定位根块")
         for block in blocks:
             parent_id = block.get("parent_id")
             block_type = block.get("block_type")
             block_id = block.get("block_id") or block.get("id")
-            if block_id and (parent_id in (None, "", self.config.document_id)) and block_type == 1:
+            if block_id and (parent_id in (None, "", doc_id)) and block_type == 1:
                 return str(block_id)
         for block in blocks:
             block_id = block.get("block_id") or block.get("id")
@@ -607,13 +620,13 @@ class FeishuDocBridge:
         s = re.sub(r"\s+", "", s)
         return s.lower()
 
-    def _find_section_block_id(self, section_title: str) -> str | None:
+    def _find_section_block_id(self, section_title: str, document_id: str | None = None) -> str | None:
         if not section_title:
             return None
 
         target = section_title.strip()
         normalized_target = self._normalize_section_title(target)
-        for block in self._list_blocks():
+        for block in self._list_blocks(document_id):
             text = self._extract_block_text(block)
             if text == target or self._normalize_section_title(text) == normalized_target:
                 block_id = block.get("block_id") or block.get("id")
@@ -621,13 +634,17 @@ class FeishuDocBridge:
                     return str(block_id)
         return None
 
-    async def _find_section_block_id_async(self, section_title: str) -> str | None:
+    async def _find_section_block_id_async(
+        self,
+        section_title: str,
+        document_id: str | None = None,
+    ) -> str | None:
         if not section_title:
             return None
 
         target = section_title.strip()
         normalized_target = self._normalize_section_title(target)
-        for block in await self._list_blocks_async():
+        for block in await self._list_blocks_async(document_id):
             text = self._extract_block_text(block)
             if text == target or self._normalize_section_title(text) == normalized_target:
                 block_id = block.get("block_id") or block.get("id")
@@ -635,10 +652,11 @@ class FeishuDocBridge:
                     return str(block_id)
         return None
 
-    def _convert_markdown_to_blocks(self, markdown: str) -> list[dict[str, Any]]:
+    def _convert_markdown_to_blocks(self, markdown: str, document_id: str | None = None) -> list[dict[str, Any]]:
+        doc_id = self._doc_id(document_id)
         payloads = [
             {
-                "document_id": self.config.document_id,
+                "document_id": doc_id,
                 "from": "markdown",
                 "to": "block",
                 "content": markdown,
@@ -691,10 +709,15 @@ class FeishuDocBridge:
             _ = last_error
         return fallback_blocks
 
-    async def _convert_markdown_to_blocks_async(self, markdown: str) -> list[dict[str, Any]]:
+    async def _convert_markdown_to_blocks_async(
+        self,
+        markdown: str,
+        document_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        doc_id = self._doc_id(document_id)
         payloads = [
             {
-                "document_id": self.config.document_id,
+                "document_id": doc_id,
                 "from": "markdown",
                 "to": "block",
                 "content": markdown,
@@ -717,22 +740,28 @@ class FeishuDocBridge:
                     return blocks
             except Exception:
                 continue
-        return self._convert_markdown_to_blocks(markdown)
+        return self._convert_markdown_to_blocks(markdown, doc_id)
 
-    def append_markdown(self, markdown: str, section_title: str | None = None) -> dict[str, Any]:
+    def append_markdown(
+        self,
+        markdown: str,
+        section_title: str | None = None,
+        document_id: str | None = None,
+    ) -> dict[str, Any]:
         if not markdown or not markdown.strip():
             raise FeishuBridgeError("markdown 不能为空")
+        doc_id = self._doc_id(document_id)
 
-        parent_block_id = self._find_section_block_id(section_title or "")
+        parent_block_id = self._find_section_block_id(section_title or "", doc_id)
         if not parent_block_id:
             if section_title and section_title.strip():
                 raise FeishuBridgeError(f"section 不存在: {section_title}")
-            parent_block_id = self._get_root_block_id()
+            parent_block_id = self._get_root_block_id(doc_id)
 
-        blocks = self._convert_markdown_to_blocks(markdown)
+        blocks = self._convert_markdown_to_blocks(markdown, doc_id)
         resp = self._request(
             "POST",
-            f"/open-apis/docx/v1/documents/{self.config.document_id}/blocks/{parent_block_id}/children",
+            f"/open-apis/docx/v1/documents/{doc_id}/blocks/{parent_block_id}/children",
             json_body={"children": blocks},
         )
 
@@ -750,20 +779,26 @@ class FeishuDocBridge:
             "count": len(blocks),
         }
 
-    async def append_markdown_async(self, markdown: str, section_title: str | None = None) -> dict[str, Any]:
+    async def append_markdown_async(
+        self,
+        markdown: str,
+        section_title: str | None = None,
+        document_id: str | None = None,
+    ) -> dict[str, Any]:
         if not markdown or not markdown.strip():
             raise FeishuBridgeError("markdown 不能为空")
+        doc_id = self._doc_id(document_id)
 
-        parent_block_id = await self._find_section_block_id_async(section_title or "")
+        parent_block_id = await self._find_section_block_id_async(section_title or "", doc_id)
         if not parent_block_id:
             if section_title and section_title.strip():
                 raise FeishuBridgeError(f"section 不存在: {section_title}")
-            parent_block_id = await self._get_root_block_id_async()
+            parent_block_id = await self._get_root_block_id_async(doc_id)
 
-        blocks = await self._convert_markdown_to_blocks_async(markdown)
+        blocks = await self._convert_markdown_to_blocks_async(markdown, doc_id)
         resp = await self._request_async(
             "POST",
-            f"/open-apis/docx/v1/documents/{self.config.document_id}/blocks/{parent_block_id}/children",
+            f"/open-apis/docx/v1/documents/{doc_id}/blocks/{parent_block_id}/children",
             json_body={"children": blocks},
         )
 
