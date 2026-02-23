@@ -22,10 +22,15 @@ AGENTS = {
         "log_file": agent_log_file("bouncer"),
         "schedule": {"hour": 8, "minute": 0} # 08:00 AM
     },
-    "knowledge-auditor": {
-        "command": [PYTHON_BIN, "agents/knowledge_auditor/auditor.py"],
+    "knowledge-auditor-alert": {
+        "command": [PYTHON_BIN, "agents/knowledge_auditor/auditor.py", "--alert"],
         "log_file": agent_log_file("knowledge_auditor"),
         "schedule": {"interval": 4, "unit": "hours"} # Every 4 hours
+    },
+    "knowledge-auditor-weekly": {
+        "command": [PYTHON_BIN, "agents/knowledge_auditor/auditor.py"],
+        "log_file": agent_log_file("knowledge_auditor"),
+        "schedule": {"day_of_week": "monday", "hour": 9, "minute": 0} # Every Monday at 09:00
     },
     "inbox-processor": {
         "command": [PYTHON_BIN, "agents/inbox_processor/inbox_processor.py"],
@@ -33,6 +38,16 @@ AGENTS = {
         "schedule": {"hour": 10, "minute": 30} # 10:30 AM
     },
     # axiom-synthesizer is manual, so no schedule here
+}
+
+VALID_WEEKDAYS = {
+    "monday",
+    "tuesday",
+    "wednesday",
+    "thursday",
+    "friday",
+    "saturday",
+    "sunday",
 }
 
 LOG_DIR = ROOT / "data" / "logs"
@@ -99,7 +114,21 @@ def schedule_jobs():
         log_file = config["log_file"]
         schedule_config = config["schedule"]
 
-        if "hour" in schedule_config and "minute" in schedule_config:
+        if "day_of_week" in schedule_config and "hour" in schedule_config and "minute" in schedule_config:
+            day_of_week = str(schedule_config["day_of_week"]).lower()
+            if day_of_week not in VALID_WEEKDAYS:
+                print(
+                    f"Warning: Invalid day_of_week '{schedule_config['day_of_week']}' for {agent_name}; skipping"
+                )
+                continue
+            time_str = f"{schedule_config['hour']:02d}:{schedule_config['minute']:02d}"
+            weekly = getattr(schedule.every(), day_of_week, None)
+            if weekly is None:
+                print(f"Warning: Scheduler backend missing weekly attribute '{day_of_week}' for {agent_name}")
+                continue
+            weekly.at(time_str).do(run_agent, agent_name, command, log_file)
+            print(f"Scheduled {agent_name} weekly on {day_of_week.capitalize()} at {time_str}")
+        elif "hour" in schedule_config and "minute" in schedule_config:
             schedule.every().day.at(
                 f"{schedule_config['hour']:02d}:{schedule_config['minute']:02d}"
             ).do(run_agent, agent_name, command, log_file)
