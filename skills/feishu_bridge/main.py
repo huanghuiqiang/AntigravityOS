@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-import re
 from threading import Lock
 
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
-from skills.feishu_bridge.bridge import FeishuBridgeError, build_bridge_from_env
+from skills.feishu_bridge.bridge import FeishuAPIError, FeishuBridgeError, build_bridge_from_env
 
 
 class AppendMarkdownRequest(BaseModel):
@@ -64,11 +63,7 @@ def _shutdown_bridge() -> None:
 
 
 def _map_error_status(message: str) -> int:
-    # Prefer upstream HTTP status if present in bridge error text.
-    match = re.search(r"status=(\d{3})", message)
-    if match:
-        return int(match.group(1))
-
+    # Legacy fallback for non-structured exceptions.
     if "鉴权失败: 401" in message:
         return 401
     if "鉴权失败: 403" in message:
@@ -85,6 +80,18 @@ def _map_error_status(message: str) -> int:
 
 
 def _error_response(exc: FeishuBridgeError) -> JSONResponse:
+    if isinstance(exc, FeishuAPIError):
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={
+                "success": False,
+                "message": exc.message,
+                "error_code": exc.error_code,
+                "log_id": exc.log_id,
+                "trace_id": exc.trace_id,
+            },
+        )
+
     message = str(exc)
     return JSONResponse(
         status_code=_map_error_status(message),

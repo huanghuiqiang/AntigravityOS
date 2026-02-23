@@ -10,7 +10,7 @@ except ModuleNotFoundError:  # pragma: no cover - environment dependent
     TestClient = None
     FASTAPI_AVAILABLE = False
 
-from skills.feishu_bridge.bridge import BridgeConfig, FeishuDocBridge
+from skills.feishu_bridge.bridge import BridgeConfig, FeishuAPIError, FeishuDocBridge
 if FASTAPI_AVAILABLE:
     from skills.feishu_bridge.main import app
 else:  # pragma: no cover - environment dependent
@@ -412,13 +412,24 @@ def test_health_returns_403_when_auth_forbidden(monkeypatch) -> None:
     monkeypatch.setattr(
         main_module,
         "build_bridge_from_env",
-        lambda: (_ for _ in ()).throw(main_module.FeishuBridgeError("鉴权失败: 403")),
+        lambda: (_ for _ in ()).throw(
+            FeishuAPIError(
+                "鉴权失败: 403",
+                status_code=403,
+                error_code=99991672,
+                log_id="log_x",
+                trace_id="trace_x",
+            )
+        ),
     )
 
     client = TestClient(app)
     resp = client.post("/health")
     assert resp.status_code == 403
     assert resp.json()["success"] is False
+    assert resp.json()["error_code"] == 99991672
+    assert resp.json()["log_id"] == "log_x"
+    assert resp.json()["trace_id"] == "trace_x"
 
 
 def test_append_markdown_returns_400_for_empty_markdown(monkeypatch) -> None:

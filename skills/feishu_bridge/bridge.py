@@ -36,6 +36,33 @@ class FeishuBridgeError(RuntimeError):
     """Raised when Feishu bridge operations fail."""
 
 
+class FeishuAPIError(FeishuBridgeError):
+    """Structured API error with status and provider metadata."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        status_code: int = 500,
+        error_code: int | None = None,
+        log_id: str | None = None,
+        trace_id: str | None = None,
+    ) -> None:
+        self.message = message
+        self.status_code = status_code
+        self.error_code = error_code
+        self.log_id = log_id
+        self.trace_id = trace_id
+        parts = [message, f"status={status_code}"]
+        if error_code is not None:
+            parts.append(f"code={error_code}")
+        if log_id:
+            parts.append(f"log_id={log_id}")
+        if trace_id:
+            parts.append(f"trace_id={trace_id}")
+        super().__init__(" | ".join(parts))
+
+
 def _extract_error_meta(resp: httpx.Response) -> tuple[str, str]:
     """Return (summary, log_id) from Feishu error payload if possible."""
     try:
@@ -163,12 +190,15 @@ class FeishuDocBridge:
             if resp.status_code in {401, 403}:
                 if refreshed:
                     summary, log_id = _extract_error_meta(resp)
-                    parts = [f"鉴权失败: {resp.status_code}"]
-                    if summary:
-                        parts.append(summary)
-                    if log_id:
-                        parts.append(f"log_id={log_id}")
-                    parts.append(f"trace_id={trace_id}")
+                    error_code = None
+                    try:
+                        payload = resp.json()
+                        if isinstance(payload, dict):
+                            raw = payload.get("code")
+                            if isinstance(raw, int):
+                                error_code = raw
+                    except ValueError:
+                        pass
                     _LOGGER.error(
                         json.dumps(
                             {
@@ -182,7 +212,16 @@ class FeishuDocBridge:
                             ensure_ascii=False,
                         )
                     )
-                    raise FeishuBridgeError(" | ".join(parts))
+                    msg = f"鉴权失败: {resp.status_code}"
+                    if summary:
+                        msg = f"{msg} {summary}"
+                    raise FeishuAPIError(
+                        msg,
+                        status_code=resp.status_code,
+                        error_code=error_code,
+                        log_id=log_id or None,
+                        trace_id=trace_id,
+                    )
                 self._refresh_tenant_token()
                 refreshed = True
                 continue
@@ -217,8 +256,12 @@ class FeishuDocBridge:
                         ensure_ascii=False,
                     )
                 )
-                raise FeishuBridgeError(
-                    f"接口失败: path={path} status={resp.status_code} payload={data} trace_id={trace_id}"
+                raise FeishuAPIError(
+                    f"接口失败: path={path} msg={data.get('msg')}",
+                    status_code=resp.status_code,
+                    error_code=data.get("code") if isinstance(data.get("code"), int) else None,
+                    log_id=log_id or None,
+                    trace_id=trace_id,
                 )
             elapsed_ms = int((time.perf_counter() - started) * 1000)
             _LOGGER.info(
@@ -235,7 +278,11 @@ class FeishuDocBridge:
             )
             return data
 
-        raise FeishuBridgeError(f"请求重试耗尽: {path} trace_id={trace_id}")
+        raise FeishuAPIError(
+            f"请求重试耗尽: {path}",
+            status_code=429,
+            trace_id=trace_id,
+        )
 
     def get_document_meta(self) -> dict[str, Any]:
         return self._request(
