@@ -643,6 +643,63 @@ def test_clear_section_deletes_between_heading_boundaries() -> None:
     assert calls["delete"] == 1
 
 
+def test_batch_upsert_tasks_updates_existing_and_creates_new() -> None:
+    calls = {"update": 0, "create": 0}
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        path = req.url.path
+        if path.endswith("/open-apis/bitable/v1/apps/app_x/tables/tbl_x/records") and req.method == "GET":
+            return httpx.Response(
+                200,
+                json={"code": 0, "data": {"items": [{"record_id": "rec_old", "fields": {"任务": "任务A"}}]}},
+            )
+        if path.endswith("/open-apis/bitable/v1/apps/app_x/tables/tbl_x/fields") and req.method == "GET":
+            return httpx.Response(
+                200,
+                json={
+                    "code": 0,
+                    "data": {
+                        "items": [
+                            {"field_name": "任务", "type": 1},
+                            {"field_name": "开始时间", "type": 5},
+                        ]
+                    },
+                },
+            )
+        if path.endswith("/open-apis/bitable/v1/apps/app_x/tables/tbl_x/records/rec_old"):
+            calls["update"] += 1
+            body = json.loads(req.content.decode("utf-8"))
+            assert body["fields"]["任务"] == "任务A"
+            assert isinstance(body["fields"]["开始时间"], int)
+            return httpx.Response(200, json={"code": 0, "data": {"record": {"record_id": "rec_old"}}})
+        if path.endswith("/open-apis/bitable/v1/apps/app_x/tables/tbl_x/records") and req.method == "POST":
+            calls["create"] += 1
+            body = json.loads(req.content.decode("utf-8"))
+            assert body["fields"]["任务"] == "任务B"
+            assert isinstance(body["fields"]["开始时间"], int)
+            return httpx.Response(200, json={"code": 0, "data": {"record": {"record_id": "rec_new"}}})
+        raise AssertionError(f"unexpected {req.method} path: {path}")
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    bridge = FeishuDocBridge(BridgeConfig(app_id="id", app_secret="secret"), client=client)
+    bridge._tenant_access_token = "token"
+    bridge._token_expire_at = 9999999999
+
+    result = bridge.batch_upsert_tasks(
+        app_token="app_x",
+        table_id="tbl_x",
+        tasks=[
+            {"任务": "任务A", "开始时间": "2026-02-23"},
+            {"任务": "任务B", "开始时间": "2026-02-24"},
+        ],
+    )
+    assert result["success"] is True
+    assert result["updated"] == 1
+    assert result["created"] == 1
+    assert calls["update"] == 1
+    assert calls["create"] == 1
+
+
 def test_health_contains_probe_breakdown() -> None:
     def handler(req: httpx.Request) -> httpx.Response:
         path = req.url.path

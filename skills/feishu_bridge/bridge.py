@@ -12,6 +12,7 @@ import os
 import re
 import time
 import uuid
+from datetime import datetime, timezone
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -1266,6 +1267,110 @@ class FeishuDocBridge:
             "cleared": clear.get("deleted_count", 0),
             "block_id": append.get("block_id", ""),
             "count": append.get("count", 0),
+        }
+
+    @staticmethod
+    def _to_unix_ms(value: Any) -> int | None:
+        if isinstance(value, int):
+            return value
+        if isinstance(value, float):
+            return int(value)
+        if isinstance(value, str):
+            raw = value.strip()
+            if raw.isdigit():
+                return int(raw)
+            for fmt in ("%Y-%m-%d", "%Y/%m/%d"):
+                try:
+                    dt = datetime.strptime(raw, fmt).replace(tzinfo=timezone.utc)
+                    return int(dt.timestamp() * 1000)
+                except ValueError:
+                    continue
+        return None
+
+    def adapt_bitable_fields(
+        self,
+        app_token: str,
+        table_id: str,
+        fields: dict[str, Any],
+    ) -> dict[str, Any]:
+        schema = self._request(
+            "GET",
+            f"/open-apis/bitable/v1/apps/{app_token}/tables/{table_id}/fields",
+            params={"page_size": 500},
+        ).get("data", {})
+        items = schema.get("items", []) if isinstance(schema.get("items"), list) else []
+        by_name = {x.get("field_name"): x for x in items}
+        adapted: dict[str, Any] = {}
+        for key, value in fields.items():
+            meta = by_name.get(key, {})
+            ftype = meta.get("type")
+            if ftype == 5:
+                ms = self._to_unix_ms(value)
+                adapted[key] = ms if ms is not None else value
+                continue
+            if ftype == 21:
+                if isinstance(value, str):
+                    adapted[key] = [value]
+                else:
+                    adapted[key] = value
+                continue
+            if ftype == 3 and isinstance(value, str):
+                # Keep option display name if provided; table config maps it.
+                adapted[key] = value
+                continue
+            adapted[key] = value
+        return adapted
+
+    def batch_upsert_tasks(
+        self,
+        app_token: str,
+        table_id: str,
+        tasks: list[dict[str, Any]],
+        key_field: str = "任务",
+    ) -> dict[str, Any]:
+        if not tasks:
+            raise FeishuBridgeError("tasks 不能为空")
+        existing = self._request(
+            "GET",
+            f"/open-apis/bitable/v1/apps/{app_token}/tables/{table_id}/records",
+            params={"page_size": 500},
+        ).get("data", {})
+        items = existing.get("items", []) if isinstance(existing.get("items"), list) else []
+        key_to_record: dict[str, str] = {}
+        for row in items:
+            rid = row.get("record_id")
+            val = (row.get("fields") or {}).get(key_field)
+            if rid and isinstance(val, str) and val.strip():
+                key_to_record[val.strip()] = str(rid)
+
+        created = 0
+        updated = 0
+        for raw in tasks:
+            if not isinstance(raw, dict):
+                continue
+            fields = raw.get("fields") if isinstance(raw.get("fields"), dict) else raw
+            if not isinstance(fields, dict):
+                continue
+            key = fields.get(key_field)
+            if not isinstance(key, str) or not key.strip():
+                raise FeishuBridgeError(f"task 缺少关键字段: {key_field}")
+            adapted = self.adapt_bitable_fields(app_token, table_id, fields)
+            if key.strip() in key_to_record:
+                self.update_bitable(app_token, table_id, key_to_record[key.strip()], adapted)
+                updated += 1
+            else:
+                self._request(
+                    "POST",
+                    f"/open-apis/bitable/v1/apps/{app_token}/tables/{table_id}/records",
+                    json_body={"fields": adapted},
+                )
+                created += 1
+        return {
+            "success": True,
+            "message": "批量 upsert 完成",
+            "created": created,
+            "updated": updated,
+            "total": created + updated,
         }
 
 

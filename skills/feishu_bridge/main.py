@@ -52,6 +52,13 @@ class ReplaceSectionRequest(BaseModel):
     document_id: str | None = None
 
 
+class BatchUpsertTasksRequest(BaseModel):
+    app_token: str
+    table_id: str
+    tasks: list[dict]
+    key_field: str = "任务"
+
+
 app = FastAPI(title="Local Feishu Document Bridge", version="1.0.0")
 _bridge_lock = Lock()
 _bridge_singleton = None
@@ -244,6 +251,23 @@ async def replace_section(payload: ReplaceSectionRequest) -> dict:
             section_title=payload.section_title,
             markdown=payload.markdown,
             document_id=payload.document_id,
+        )
+    except FeishuBridgeError as exc:
+        return _error_response(exc)
+
+
+@app.post("/batch_upsert_tasks")
+async def batch_upsert_tasks(payload: BatchUpsertTasksRequest) -> dict:
+    try:
+        bridge = _get_bridge()
+        return await _call_bridge(
+            bridge,
+            "batch_upsert_tasks_async",
+            "batch_upsert_tasks",
+            app_token=payload.app_token,
+            table_id=payload.table_id,
+            tasks=payload.tasks,
+            key_field=payload.key_field,
         )
     except FeishuBridgeError as exc:
         return _error_response(exc)
