@@ -41,6 +41,17 @@ class DiagnosePermissionsRequest(BaseModel):
     table_id: str | None = None
 
 
+class ClearSectionRequest(BaseModel):
+    section_title: str
+    document_id: str | None = None
+
+
+class ReplaceSectionRequest(BaseModel):
+    section_title: str
+    markdown: str
+    document_id: str | None = None
+
+
 app = FastAPI(title="Local Feishu Document Bridge", version="1.0.0")
 _bridge_lock = Lock()
 _bridge_singleton = None
@@ -202,6 +213,37 @@ async def diagnose_permissions(payload: DiagnosePermissionsRequest) -> dict:
             document_id=payload.document_id,
             app_token=payload.app_token,
             table_id=payload.table_id,
+        )
+    except FeishuBridgeError as exc:
+        return _error_response(exc)
+
+
+@app.post("/clear_section")
+async def clear_section(payload: ClearSectionRequest) -> dict:
+    try:
+        bridge = _get_bridge()
+        return await _call_bridge(
+            bridge,
+            "clear_section_async",
+            "clear_section",
+            section_title=payload.section_title,
+            document_id=payload.document_id,
+        )
+    except FeishuBridgeError as exc:
+        return _error_response(exc)
+
+
+@app.post("/replace_section")
+async def replace_section(payload: ReplaceSectionRequest) -> dict:
+    try:
+        bridge = _get_bridge()
+        return await _call_bridge(
+            bridge,
+            "replace_section_async",
+            "replace_section",
+            section_title=payload.section_title,
+            markdown=payload.markdown,
+            document_id=payload.document_id,
         )
     except FeishuBridgeError as exc:
         return _error_response(exc)

@@ -1019,6 +1019,32 @@ class FeishuDocBridge:
                     return app_token, table_id
         return None
 
+    def _get_root_children_snapshot(self, document_id: str) -> tuple[str, list[str], dict[str, dict[str, Any]]]:
+        data = self._request(
+            "GET",
+            f"/open-apis/docx/v1/documents/{document_id}/blocks",
+            params={"page_size": 500},
+        ).get("data", {})
+        items = data.get("items", []) if isinstance(data.get("items"), list) else []
+        by_id: dict[str, dict[str, Any]] = {}
+        for b in items:
+            bid = b.get("block_id") or b.get("id")
+            if bid:
+                by_id[str(bid)] = b
+
+        root_id = ""
+        children: list[str] = []
+        for b in items:
+            if b.get("block_type") == 1:
+                bid = b.get("block_id") or b.get("id")
+                if bid:
+                    root_id = str(bid)
+                    children = [str(x) for x in (b.get("children") or []) if x]
+                    break
+        if not root_id:
+            raise FeishuBridgeError("未找到文档根块，无法清理章节")
+        return root_id, children, by_id
+
     def diagnose_permissions(
         self,
         *,
@@ -1178,6 +1204,68 @@ class FeishuDocBridge:
             "bitable_target": {"app_token": resolved[0], "table_id": resolved[1]} if resolved else None,
             "checks": checks,
             "errors": errors,
+        }
+
+    def clear_section(self, section_title: str, document_id: str | None = None) -> dict[str, Any]:
+        if not section_title or not section_title.strip():
+            raise FeishuBridgeError("section_title 不能为空")
+        doc_id = self._doc_id(document_id)
+        section_id = self._find_section_block_id(section_title, doc_id)
+        if not section_id:
+            raise FeishuBridgeError(f"section 不存在: {section_title}")
+
+        root_id, children, by_id = self._get_root_children_snapshot(doc_id)
+        if section_id not in children:
+            raise FeishuBridgeError(f"section 不在根级块列表中: {section_title}")
+
+        start = children.index(section_id) + 1
+        end = len(children)
+        for i in range(start, len(children)):
+            bid = children[i]
+            block = by_id.get(bid, {})
+            # Heading block marks next section boundary.
+            if block.get("block_type") == 4:
+                end = i
+                break
+
+        if start >= end:
+            return {
+                "success": True,
+                "message": "章节已为空",
+                "document_id": doc_id,
+                "section_title": section_title,
+                "deleted_count": 0,
+            }
+
+        self._request(
+            "DELETE",
+            f"/open-apis/docx/v1/documents/{doc_id}/blocks/{root_id}/children/batch_delete",
+            json_body={"start_index": start, "end_index": end},
+        )
+        return {
+            "success": True,
+            "message": "章节已清空",
+            "document_id": doc_id,
+            "section_title": section_title,
+            "deleted_count": end - start,
+        }
+
+    def replace_section(
+        self,
+        section_title: str,
+        markdown: str,
+        document_id: str | None = None,
+    ) -> dict[str, Any]:
+        clear = self.clear_section(section_title, document_id=document_id)
+        append = self.append_markdown(markdown, section_title=section_title, document_id=document_id)
+        return {
+            "success": True,
+            "message": "章节已替换",
+            "document_id": self._doc_id(document_id),
+            "section_title": section_title,
+            "cleared": clear.get("deleted_count", 0),
+            "block_id": append.get("block_id", ""),
+            "count": append.get("count", 0),
         }
 
 

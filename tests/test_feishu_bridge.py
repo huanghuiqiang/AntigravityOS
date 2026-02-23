@@ -604,6 +604,45 @@ def test_read_doc_supports_document_override() -> None:
     assert result["content"] == "override-content"
 
 
+def test_clear_section_deletes_between_heading_boundaries() -> None:
+    calls = {"delete": 0}
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        path = req.url.path
+        if path.endswith("/open-apis/docx/v1/documents/doc-1/blocks") and req.method == "GET":
+            return httpx.Response(
+                200,
+                json={
+                    "code": 0,
+                    "data": {
+                        "items": [
+                            {"block_id": "root", "block_type": 1, "children": ["h1", "p1", "p2", "h2"]},
+                            {"block_id": "h1", "block_type": 4, "heading1": {"elements": [{"text_run": {"content": "目标章节"}}]}},
+                            {"block_id": "p1", "block_type": 2},
+                            {"block_id": "p2", "block_type": 2},
+                            {"block_id": "h2", "block_type": 4, "heading1": {"elements": [{"text_run": {"content": "下一章节"}}]}},
+                        ]
+                    },
+                },
+            )
+        if path.endswith("/open-apis/docx/v1/documents/doc-1/blocks/root/children/batch_delete") and req.method == "DELETE":
+            calls["delete"] += 1
+            body = json.loads(req.content.decode("utf-8"))
+            assert body == {"start_index": 1, "end_index": 3}
+            return httpx.Response(200, json={"code": 0, "data": {}})
+        raise AssertionError(f"unexpected {req.method} path: {path}")
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    bridge = FeishuDocBridge(BridgeConfig(app_id="id", app_secret="secret", document_id="doc-1"), client=client)
+    bridge._tenant_access_token = "token"
+    bridge._token_expire_at = 9999999999
+
+    result = bridge.clear_section("目标章节")
+    assert result["success"] is True
+    assert result["deleted_count"] == 2
+    assert calls["delete"] == 1
+
+
 def test_health_contains_probe_breakdown() -> None:
     def handler(req: httpx.Request) -> httpx.Response:
         path = req.url.path
