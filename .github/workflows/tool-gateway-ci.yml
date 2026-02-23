@@ -1,0 +1,32 @@
+name: Tool Gateway CI
+
+on:
+  push:
+    paths:
+      - 'apps/tool_gateway/**'
+      - 'integrations/openclaw/**'
+      - 'tests/test_tool_gateway.py'
+      - '.github/workflows/tool-gateway-ci.yml'
+  pull_request:
+    paths:
+      - 'apps/tool_gateway/**'
+      - 'integrations/openclaw/**'
+      - 'tests/test_tool_gateway.py'
+      - '.github/workflows/tool-gateway-ci.yml'
+
+jobs:
+  python-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install fastapi httpx pydantic pytest mypy
+      - name: Typecheck
+        run: mypy apps/tool_gateway
+      - name: Test
+        run: pytest -q tests/test_tool_gateway.py

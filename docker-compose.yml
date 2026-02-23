@@ -44,6 +44,13 @@ services:
     ports:
       - "${FEISHU_BRIDGE_PORT:-8001}:8001"
 
+  tool-gateway:
+    extends:
+      service: antigravity-base
+    command: [ "python", "-m", "uvicorn", "apps.tool_gateway.main:app", "--host", "0.0.0.0", "--port", "8010" ]
+    ports:
+      - "${TOOL_GATEWAY_PORT:-8010}:8010"
+
   # The following agent services are defined primarily for 'docker compose run' manual execution
   # The actual scheduled execution will be handled by 'scheduler'
   cognitive-bouncer:

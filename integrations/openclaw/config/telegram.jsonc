@@ -1,0 +1,15 @@
+{
+  "channels": {
+    "telegram": {
+      "enabled": true,
+      "botToken": "${TELEGRAM_BOT_TOKEN}",
+      "capabilities": {
+        "inlineButtons": "allowlist"
+      },
+      "allowlist": {
+        "accounts": ["${TELEGRAM_ALLOWED_ACCOUNT}"],
+        "groups": ["${TELEGRAM_ALLOWED_GROUP}"]
+      }
+    }
+  }
+}
