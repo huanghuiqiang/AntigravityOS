@@ -9,7 +9,7 @@ services:
     volumes:
       - .:/app # Mount the entire project directory into the container for development
       # Changed to bind mount for logs
-      - ./data/logs:/app/data/logs 
+      - ./data/logs:/app/data/logs
       # IMPORTANT: Mount your Obsidian Vault here. Replace "/host_path/to/your/Obsidian/Vault"
       # with the actual path on your host machine.
       # For example: - /Users/hugh/Documents/Obsidian/AINotes:/app/data/obsidian_vault
@@ -24,37 +24,39 @@ services:
       OBSIDIAN_VAULT: "/app/data/obsidian_vault"
       # Enable unbuffered logging for Python to see logs in docker compose logs
       PYTHONUNBUFFERED: "1"
+      # Set timezone to match local timezone
+      TZ: "${TZ:-Asia/Shanghai}"
       # Other API Keys and sensitive info should be in .env file
 
-  # This service runs the Python-based scheduler
+      # This service runs the Python-based scheduler
   scheduler:
     extends:
       service: antigravity-base
-    command: ["python", "scheduler.py"]
+    command: [ "python", "scheduler.py" ]
 
   # The following agent services are defined primarily for 'docker compose run' manual execution
   # The actual scheduled execution will be handled by 'scheduler'
   cognitive-bouncer:
     extends:
       service: antigravity-base
-    command: ["python", "agents/cognitive_bouncer/bouncer.py"] # For manual run
+    command: [ "python", "agents/cognitive_bouncer/bouncer.py" ] # For manual run
 
   inbox-processor:
     extends:
       service: antigravity-base
-    command: ["python", "agents/inbox_processor/inbox_processor.py"] # For manual run
+    command: [ "python", "agents/inbox_processor/inbox_processor.py" ] # For manual run
 
   axiom-synthesizer:
     extends:
       service: antigravity-base
-    command: ["python", "agents/axiom_synthesizer/synthesizer.py"] # For manual run
+    command: [ "python", "agents/axiom_synthesizer/synthesizer.py" ] # For manual run
 
   daily-briefing:
     extends:
       service: antigravity-base
-    command: ["python", "agents/daily_briefing/daily_briefing.py"] # For manual run
+    command: [ "python", "agents/daily_briefing/daily_briefing.py" ] # For manual run
 
   knowledge-auditor:
     extends:
       service: antigravity-base
-    command: ["python", "agents/knowledge_auditor/auditor.py"] # For manual run
+    command: [ "python", "agents/knowledge_auditor/auditor.py" ] # For manual run
