@@ -2,10 +2,12 @@ import schedule
 import time
 import subprocess
 import os
+import re
 from pathlib import Path
 from datetime import datetime
 
 from agos.config import agent_log_file, project_root
+from agos.notify import send_message
 
 ROOT = project_root()
 PYTHON_BIN = os.getenv("PYTHON_BIN", "python")
@@ -64,6 +66,30 @@ else:
     print(f"Scheduler: Log directory already exists: {LOG_DIR}")
 print(f"Scheduler initialized. Log directory: {LOG_DIR}") # Existing print for debugging
 
+
+def _extract_trace_ids(text: str) -> list[str]:
+    if not text:
+        return []
+    found = re.findall(r"trace_id[=:]\s*([A-Za-z0-9_-]{6,64})", text)
+    return sorted(set(found))
+
+
+def _notify_failure(agent_name: str, run_id: str, exit_code: int, log_path: Path, details: str) -> None:
+    if os.getenv("SCHEDULER_ALERT_ON_FAILURE", "true").strip().lower() in {"0", "false", "off"}:
+        return
+    trace_ids = _extract_trace_ids(details)
+    lines = [
+        "🚨 <b>Scheduler 任务失败告警</b>",
+        f"Agent: <code>{agent_name}</code>",
+        f"Run ID: <code>{run_id}</code>",
+        f"Exit Code: <code>{exit_code}</code>",
+        f"Log: <code>{log_path}</code>",
+    ]
+    if trace_ids:
+        lines.append(f"Trace IDs: <code>{', '.join(trace_ids[:5])}</code>")
+    send_message("\n".join(lines))
+
+
 def run_agent(agent_name, command, log_file):
     log_path = Path(log_file)
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -90,6 +116,7 @@ def run_agent(agent_name, command, log_file):
                 f.write(f"\n--- END run_id={run_id} | exit_code=0 ---\n")
                 print(f"[{timestamp}] Agent {agent_name} finished successfully.")
             except subprocess.CalledProcessError as e:
+                error_blob = f"{e.stdout}\n{e.stderr}"
                 f.write(f"""--- ERROR ({e.returncode}) ---
 STDOUT:
 {e.stdout}
@@ -97,18 +124,21 @@ STDERR:
 {e.stderr}""")
                 f.write(f"\n--- END run_id={run_id} | exit_code={e.returncode} ---\n")
                 print(f"[{timestamp}] Agent {agent_name} failed with error: {e.returncode}. Check {log_path}")
+                _notify_failure(agent_name, run_id, e.returncode, log_path, error_blob)
             except FileNotFoundError:
                 f.write(f"""--- ERROR ---
 Command not found: {command[0]}
 """)
                 f.write(f"\n--- END run_id={run_id} | exit_code=127 ---\n")
                 print(f"[{timestamp}] Agent {agent_name} failed: Command not found - {command[0]}. Check {log_path}")
+                _notify_failure(agent_name, run_id, 127, log_path, f"Command not found: {command[0]}")
             except Exception as e:
                 f.write(f"""--- ERROR ---
 An unexpected error occurred: {e}
 """)
                 f.write(f"\n--- END run_id={run_id} | exit_code=1 ---\n")
                 print(f"[{timestamp}] Agent {agent_name} failed: An unexpected error occurred - {e}. Check {log_path}")
+                _notify_failure(agent_name, run_id, 1, log_path, str(e))
     except Exception as file_e:
         print(f"[{timestamp}] CRITICAL ERROR: Could not open/write to log file {log_path}: {file_e}")
 

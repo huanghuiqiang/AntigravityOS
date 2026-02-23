@@ -102,3 +102,24 @@ def test_schedule_jobs_skips_invalid_weekday(monkeypatch):
 
     scheduler.schedule_jobs()
     assert fake_schedule.calls == []
+
+
+def test_run_agent_sends_failure_alert_with_trace_id(tmp_path, monkeypatch):
+    log_file = tmp_path / "failed.log"
+    alerts = []
+
+    monkeypatch.setattr(scheduler, "ROOT", tmp_path)
+    monkeypatch.setattr(scheduler, "LOG_DIR", tmp_path)
+    monkeypatch.setattr(scheduler, "send_message", lambda text: alerts.append(text) or True)
+
+    scheduler.run_agent(
+        agent_name="broken-agent",
+        command=[sys.executable, "-c", "import sys;print('trace_id=abc123xyz');sys.exit(2)"],
+        log_file=str(log_file),
+    )
+
+    assert log_file.exists()
+    assert alerts, "expected failure alert to be sent"
+    assert "broken-agent" in alerts[0]
+    assert "trace_id" not in alerts[0].lower()
+    assert "abc123xyz" in alerts[0]
