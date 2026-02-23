@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 from threading import Lock
 
 from fastapi import FastAPI
@@ -54,12 +55,19 @@ def _get_bridge():
 
 
 @app.on_event("shutdown")
-def _shutdown_bridge() -> None:
+async def _shutdown_bridge() -> None:
     global _bridge_singleton
     with _bridge_lock:
-        if _bridge_singleton is not None:
-            _bridge_singleton.close()
-            _bridge_singleton = None
+        bridge = _bridge_singleton
+        _bridge_singleton = None
+    if bridge is not None:
+        aclose = getattr(bridge, "aclose", None)
+        if callable(aclose):
+            result = aclose()
+            if inspect.isawaitable(result):
+                await result
+        else:
+            bridge.close()
 
 
 def _map_error_status(message: str) -> int:
@@ -99,11 +107,24 @@ def _error_response(exc: FeishuBridgeError) -> JSONResponse:
     )
 
 
+async def _call_bridge(bridge, async_name: str, sync_name: str, **kwargs):
+    fn = getattr(bridge, async_name, None)
+    if fn is None:
+        fn = getattr(bridge, sync_name)
+    result = fn(**kwargs)
+    if inspect.isawaitable(result):
+        return await result
+    return result
+
+
 @app.post("/append_markdown")
-def append_markdown(payload: AppendMarkdownRequest) -> dict:
+async def append_markdown(payload: AppendMarkdownRequest) -> dict:
     try:
         bridge = _get_bridge()
-        return bridge.append_markdown(
+        return await _call_bridge(
+            bridge,
+            "append_markdown_async",
+            "append_markdown",
             markdown=payload.markdown,
             section_title=payload.section_title,
         )
@@ -112,28 +133,36 @@ def append_markdown(payload: AppendMarkdownRequest) -> dict:
 
 
 @app.post("/read_doc")
-def read_doc(payload: ReadDocRequest) -> dict:
+async def read_doc(payload: ReadDocRequest) -> dict:
     try:
         bridge = _get_bridge()
-        return bridge.read_doc(payload.format)
+        return await _call_bridge(
+            bridge,
+            "read_doc_async",
+            "read_doc",
+            format_type=payload.format,
+        )
     except FeishuBridgeError as exc:
         return _error_response(exc)
 
 
 @app.post("/health")
-def health() -> dict:
+async def health() -> dict:
     try:
         bridge = _get_bridge()
-        return bridge.health()
+        return await _call_bridge(bridge, "health_async", "health")
     except FeishuBridgeError as exc:
         return _error_response(exc)
 
 
 @app.post("/update_bitable")
-def update_bitable(payload: UpdateBitableRequest) -> dict:
+async def update_bitable(payload: UpdateBitableRequest) -> dict:
     try:
         bridge = _get_bridge()
-        return bridge.update_bitable(
+        return await _call_bridge(
+            bridge,
+            "update_bitable_async",
+            "update_bitable",
             app_token=payload.app_token,
             table_id=payload.table_id,
             record_id=payload.record_id,
@@ -144,10 +173,13 @@ def update_bitable(payload: UpdateBitableRequest) -> dict:
 
 
 @app.post("/create_sub_doc")
-def create_sub_doc(payload: CreateSubDocRequest) -> dict:
+async def create_sub_doc(payload: CreateSubDocRequest) -> dict:
     try:
         bridge = _get_bridge()
-        return bridge.create_sub_doc(
+        return await _call_bridge(
+            bridge,
+            "create_sub_doc_async",
+            "create_sub_doc",
             title=payload.title,
             folder_token=payload.folder_token,
         )
@@ -156,10 +188,13 @@ def create_sub_doc(payload: CreateSubDocRequest) -> dict:
 
 
 @app.post("/diagnose_permissions")
-def diagnose_permissions(payload: DiagnosePermissionsRequest) -> dict:
+async def diagnose_permissions(payload: DiagnosePermissionsRequest) -> dict:
     try:
         bridge = _get_bridge()
-        return bridge.diagnose_permissions(
+        return await _call_bridge(
+            bridge,
+            "diagnose_permissions_async",
+            "diagnose_permissions",
             document_id=payload.document_id,
             app_token=payload.app_token,
             table_id=payload.table_id,
