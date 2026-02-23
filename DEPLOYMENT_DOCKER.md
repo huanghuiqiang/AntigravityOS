@@ -22,6 +22,7 @@ Antigravity OS uses an `.env` file for configuration, including API keys and pat
     *   `TELEGRAM_BOT_TOKEN`
     *   `TELEGRAM_CHAT_ID`
     *   `OBSIDIAN_VAULT_HOST_PATH` (Absolute path to your Obsidian vault on your host machine, e.g., `/Users/youruser/Documents/Obsidian/YourVaultName`)
+    *   (可选，若启用飞书桥接) `FEISHU_APP_ID` / `FEISHU_APP_SECRET` / `FEISHU_DOC_TOKEN`
 
 ### 1.2. Obsidian Vault Path
 
@@ -63,7 +64,20 @@ You can verify it's running:
 docker compose ps scheduler
 ```
 
-### 3.2. Manual Agent Execution
+### 3.2. Start Feishu Bridge (Optional)
+
+If you want to expose the local Feishu bridge API in Docker, start the `feishu-bridge` service:
+
+```bash
+docker compose up -d feishu-bridge
+```
+
+Check the health endpoint:
+```bash
+curl -sS -X POST http://127.0.0.1:${FEISHU_BRIDGE_PORT:-8001}/health
+```
+
+### 3.3. Manual Agent Execution
 
 If you need to run an agent manually (e.g., for testing or `axiom-synthesizer` which is manual), you can use `docker compose run`. This will create a new container, run the command, and then remove the container.
 
@@ -87,6 +101,7 @@ Logs for individual agent runs (triggered by the scheduler or manually) will be 
 ```bash
 tail -f ./data/logs/bouncer.log
 ```
+Runtime state files (de-dup cache, cursors, etc.) are persisted in `./data/state`.
 
 ## 5. Stopping Services
 

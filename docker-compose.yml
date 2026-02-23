@@ -6,10 +6,12 @@ services:
     build:
       context: .
       dockerfile: Dockerfile # Use the base Dockerfile
+    restart: unless-stopped
     volumes:
       - .:/app # Mount the entire project directory into the container for development
-      # Changed to bind mount for logs
+      # Persist logs and runtime state on host
       - ./data/logs:/app/data/logs
+      - ./data/state:/app/data/state
       # IMPORTANT: Mount your Obsidian Vault here. Replace "/host_path/to/your/Obsidian/Vault"
       # with the actual path on your host machine.
       # For example: - /Users/hugh/Documents/Obsidian/AINotes:/app/data/obsidian_vault
@@ -27,12 +29,20 @@ services:
       # Set timezone to match local timezone
       TZ: "${TZ:-Asia/Shanghai}"
       # Other API Keys and sensitive info should be in .env file
-
-      # This service runs the Python-based scheduler
+  
+  # This service runs the Python-based scheduler
   scheduler:
     extends:
       service: antigravity-base
     command: [ "python", "scheduler.py" ]
+
+  # Optional bridge service for local Feishu document operations.
+  feishu-bridge:
+    extends:
+      service: antigravity-base
+    command: [ "python", "-m", "uvicorn", "skills.feishu_bridge.main:app", "--host", "0.0.0.0", "--port", "8001" ]
+    ports:
+      - "${FEISHU_BRIDGE_PORT:-8001}:8001"
 
   # The following agent services are defined primarily for 'docker compose run' manual execution
   # The actual scheduled execution will be handled by 'scheduler'
