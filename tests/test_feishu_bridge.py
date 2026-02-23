@@ -79,6 +79,10 @@ def test_refresh_token_after_401() -> None:
             if calls["doc"] == 1:
                 return httpx.Response(401, json={"code": 99991661, "msg": "unauthorized"})
             return httpx.Response(200, json={"code": 0, "data": {"document": {"title": "Bridge"}}})
+        if req.url.path.endswith("/open-apis/docx/v1/documents/convert"):
+            return httpx.Response(200, json={"code": 0, "data": {"blocks": [{"block_type": 2}]}})
+        if req.url.path.endswith("/open-apis/docx/v1/documents/doc-1/blocks"):
+            return httpx.Response(200, json={"code": 0, "data": {"items": []}})
 
         raise AssertionError(f"unexpected path: {req.url.path}")
 
@@ -92,7 +96,7 @@ def test_refresh_token_after_401() -> None:
     assert result["success"] is True
     assert result["title"] == "Bridge"
     assert calls["auth"] == 1
-    assert calls["doc"] == 2
+    assert calls["doc"] == 3
 
 
 def test_retry_on_429() -> None:
@@ -104,6 +108,10 @@ def test_retry_on_429() -> None:
             if attempts["doc"] < 3:
                 return httpx.Response(429, json={"code": 0, "msg": "rate limited"})
             return httpx.Response(200, json={"code": 0, "data": {"document": {"title": "Ready"}}})
+        if req.url.path.endswith("/open-apis/docx/v1/documents/convert"):
+            return httpx.Response(200, json={"code": 0, "data": {"blocks": [{"block_type": 2}]}})
+        if req.url.path.endswith("/open-apis/docx/v1/documents/doc-1/blocks"):
+            return httpx.Response(200, json={"code": 0, "data": {"items": []}})
         raise AssertionError(f"unexpected path: {req.url.path}")
 
     client = httpx.Client(transport=httpx.MockTransport(handler))
@@ -115,7 +123,7 @@ def test_retry_on_429() -> None:
     result = bridge.health()
 
     assert result["success"] is True
-    assert attempts["doc"] == 3
+    assert attempts["doc"] == 4
 
 
 def test_find_section_block_id() -> None:
@@ -542,3 +550,43 @@ def test_diagnose_permissions_with_bitable_target() -> None:
     assert checks["doc_write_ok"] is True
     assert checks["bitable_read_ok"] is True
     assert checks["bitable_write_ok"] is True
+
+
+def test_health_contains_probe_breakdown() -> None:
+    def handler(req: httpx.Request) -> httpx.Response:
+        path = req.url.path
+        if path.endswith("/open-apis/docx/v1/documents/doc-1"):
+            return httpx.Response(200, json={"code": 0, "data": {"document": {"title": "Bridge"}}})
+        if path.endswith("/open-apis/docx/v1/documents/convert"):
+            return httpx.Response(200, json={"code": 0, "data": {"blocks": [{"block_type": 2}]}})
+        if path.endswith("/open-apis/docx/v1/documents/doc-1/blocks"):
+            return httpx.Response(
+                200,
+                json={
+                    "code": 0,
+                    "data": {
+                        "items": [
+                            {
+                                "block_id": "b53",
+                                "block_type": 53,
+                                "reference_base": {"token": "app_x_tbl_x"},
+                            }
+                        ]
+                    },
+                },
+            )
+        if path.endswith("/open-apis/bitable/v1/apps/app_x/tables/tbl_x/records") and req.method == "GET":
+            return httpx.Response(200, json={"code": 0, "data": {"items": []}})
+        raise AssertionError(f"unexpected {req.method} path: {path}")
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    bridge = FeishuDocBridge(BridgeConfig(app_id="id", app_secret="secret", document_id="doc-1"), client=client)
+    bridge._tenant_access_token = "token"
+    bridge._token_expire_at = 9999999999
+
+    health = bridge.health()
+    assert health["success"] is True
+    assert health["title"] == "Bridge"
+    assert health["probes"]["read_ok"] is True
+    assert health["probes"]["write_ok"] is True
+    assert health["probes"]["bitable_ok"] is True

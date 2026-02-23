@@ -246,11 +246,23 @@ class FeishuDocBridge:
     def health(self) -> dict[str, Any]:
         meta = self.get_document_meta()
         title = meta.get("document", {}).get("title", "")
+        probes = {"read_ok": True, "write_ok": False, "bitable_ok": False}
+        try:
+            diag = self.diagnose_permissions(document_id=self.config.document_id)
+            checks = diag.get("checks", {}) if isinstance(diag, dict) else {}
+            probes["read_ok"] = bool(checks.get("doc_read_ok", False))
+            probes["write_ok"] = bool(checks.get("doc_write_ok", False))
+            # Bitable availability probe: permission/readability level.
+            probes["bitable_ok"] = bool(checks.get("bitable_read_ok", False))
+        except FeishuBridgeError:
+            # Keep health endpoint resilient; top-level doc meta already proves service availability.
+            pass
         return {
             "success": True,
             "document_id": self.config.document_id,
             "title": title,
             "message": "service ok",
+            "probes": probes,
         }
 
     def read_doc(self, format_type: str = "markdown") -> dict[str, Any]:
@@ -529,7 +541,9 @@ class FeishuDocBridge:
             ref = block.get("reference_base") if isinstance(block.get("reference_base"), dict) else {}
             token = str(ref.get("token") or "")
             if "_tbl" in token:
-                app_token, table_id = token.split("_", 1)
+                split_at = token.find("_tbl")
+                app_token = token[:split_at]
+                table_id = token[split_at + 1 :]
                 if app_token and table_id:
                     return app_token, table_id
         return None
