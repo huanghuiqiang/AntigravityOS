@@ -697,12 +697,27 @@ class FeishuDocBridge:
             except Exception as exc:  # pragma: no cover - failover path
                 last_error = exc
 
-        # Fallback: plain text paragraph blocks per line.
+        fallback_blocks = self._fallback_markdown_blocks(markdown)
+
+        if last_error:
+            # 保留 fallback 行为，不中断流程。
+            _ = last_error
+        return fallback_blocks
+
+    def _fallback_markdown_blocks(self, markdown: str) -> list[dict[str, Any]]:
         lines = [line for line in markdown.splitlines() if line.strip()]
         if not lines and markdown.strip():
             lines = [markdown.strip()]
         if not lines:
             raise FeishuBridgeError("markdown 为空，无法追加")
+
+        def _normalize_line(line: str) -> str:
+            text = line.strip()
+            # Markdown headings: "# / ## / ###" -> plain title text.
+            text = re.sub(r"^#{1,6}\s+", "", text)
+            # Markdown unordered list: "- item" or "* item" -> "• item".
+            text = re.sub(r"^[-*]\s+", "• ", text)
+            return text
 
         fallback_blocks: list[dict[str, Any]] = []
         for line in lines:
@@ -712,16 +727,12 @@ class FeishuDocBridge:
                     "text": {
                         "elements": [
                             {
-                                "text_run": {"content": line},
+                                "text_run": {"content": _normalize_line(line)},
                             }
                         ]
                     },
                 }
             )
-
-        if last_error:
-            # 保留 fallback 行为，不中断流程。
-            _ = last_error
         return fallback_blocks
 
     async def _convert_markdown_to_blocks_async(

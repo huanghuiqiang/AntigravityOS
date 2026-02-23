@@ -543,6 +543,38 @@ def test_append_markdown_uses_children_endpoint() -> None:
     assert calls["append"] == 1
 
 
+def test_append_markdown_fallback_normalizes_markdown_symbols() -> None:
+    captured: dict[str, object] = {}
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        if req.url.path.endswith("/open-apis/docx/v1/documents/doc-1/blocks"):
+            return httpx.Response(
+                200,
+                json={"code": 0, "data": {"items": [{"block_id": "root_1", "block_type": 1, "parent_id": ""}]}},
+            )
+        if req.url.path.endswith("/open-apis/docx/v1/documents/convert"):
+            return httpx.Response(404, text="not found")
+        if req.url.path.endswith("/open-apis/docx/v1/documents/doc-1/blocks/root_1/children"):
+            captured["payload"] = json.loads(req.content.decode("utf-8"))
+            return httpx.Response(
+                200,
+                json={"code": 0, "data": {"children": [{"block_id": "new_block_1"}]}},
+            )
+        raise AssertionError(f"unexpected {req.method} path: {req.url.path}")
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    bridge = FeishuDocBridge(BridgeConfig(app_id="id", app_secret="secret", document_id="doc-1"), client=client)
+    bridge._tenant_access_token = "token"
+    bridge._token_expire_at = 9999999999
+
+    bridge.append_markdown("## 写入测试\n- 来源：Codex 自动验证")
+    children = captured["payload"]["children"]  # type: ignore[index]
+    first = children[0]["text"]["elements"][0]["text_run"]["content"]
+    second = children[1]["text"]["elements"][0]["text_run"]["content"]
+    assert first == "写入测试"
+    assert second == "• 来源：Codex 自动验证"
+
+
 def test_append_markdown_raises_when_section_not_found() -> None:
     def handler(req: httpx.Request) -> httpx.Response:
         if req.url.path.endswith("/open-apis/docx/v1/documents/doc-1/blocks"):
