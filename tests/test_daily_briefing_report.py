@@ -3,6 +3,7 @@
 from types import SimpleNamespace
 from datetime import datetime, timedelta
 
+import agents.daily_briefing.daily_briefing as briefing
 from agents.daily_briefing.daily_briefing import build_report, BACKLOG_THRESHOLD_DAYS
 
 
@@ -96,3 +97,60 @@ def test_build_report_uses_idle_hours_if_present():
     text = build_report(r)
     assert "Bouncer 超过 26h 未成功运行" not in text
     assert "Inbox Processor 超过 26h 未成功运行" not in text
+
+
+def test_sync_to_feishu_daily_log_calls_append_markdown(monkeypatch):
+    r = SimpleNamespace(
+        health_score=88.0,
+        orphan_axioms=[],
+        backlog_issues=[],
+        error=0,
+        error_types={"x": 1},
+        total=5,
+        pending=1,
+        done=4,
+        bottleneck="ok",
+        notes=[],
+        bouncer_7day=[1, 1, 1, 1, 1, 1, 1],
+        throughput_7day=[1, 0, 1, 0, 1, 0, 1],
+    )
+    called = {}
+
+    class _FakeBridge:
+        def append_markdown(self, markdown, section_title=None, document_id=None):
+            called["markdown"] = markdown
+            called["section_title"] = section_title
+            called["document_id"] = document_id
+
+    monkeypatch.setenv("FEISHU_DAILY_BRIEFING_SECTION", "每日进度日志")
+    monkeypatch.setenv("FEISHU_DAILY_BRIEFING_DOC_TOKEN", "doc_123")
+    ok = briefing.sync_to_feishu_daily_log(r, bridge=_FakeBridge())
+    assert ok is True
+    assert called["section_title"] == "每日进度日志"
+    assert called["document_id"] == "doc_123"
+    assert "系统健康度" in called["markdown"]
+
+
+def test_sync_to_feishu_daily_log_handles_bridge_error(monkeypatch):
+    r = SimpleNamespace(
+        health_score=88.0,
+        orphan_axioms=[],
+        backlog_issues=[],
+        error=0,
+        error_types={},
+        total=5,
+        pending=1,
+        done=4,
+        bottleneck="ok",
+        notes=[],
+        bouncer_7day=[1, 1, 1, 1, 1, 1, 1],
+        throughput_7day=[1, 0, 1, 0, 1, 0, 1],
+    )
+
+    class _FakeBridge:
+        def append_markdown(self, markdown, section_title=None, document_id=None):
+            raise briefing.FeishuBridgeError("auth failed")
+
+    monkeypatch.delenv("FEISHU_DAILY_BRIEFING_DOC_TOKEN", raising=False)
+    ok = briefing.sync_to_feishu_daily_log(r, bridge=_FakeBridge())
+    assert ok is False

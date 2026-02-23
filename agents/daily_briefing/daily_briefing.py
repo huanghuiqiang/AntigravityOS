@@ -5,12 +5,14 @@ Antigravity OS  |  Daily Briefing Agent
 """
 
 import argparse
+import os
 from datetime import datetime, timedelta
 from urllib.parse import urlparse
 
 from scripts.stats import collect
 from agos.config import backlog_threshold_days
 from agos.notify import send_message
+from skills.feishu_bridge import FeishuBridgeError, build_bridge_from_env
 
 
 BACKLOG_THRESHOLD_DAYS = backlog_threshold_days()
@@ -166,6 +168,51 @@ def build_report(r) -> str:
     return "\n".join(lines)
 
 
+def build_feishu_log_entry(r) -> str:
+    today = datetime.now().strftime("%Y-%m-%d")
+    lines = [
+        f"### {today} 日报",
+        f"- 系统健康度：{r.health_score:.0f}/100",
+        f"- 入库总数：{r.total}（Pending {r.pending} / Done {r.done} / Error {r.error}）",
+        f"- 7天入库：{sum(r.bouncer_7day)}",
+        f"- 7天完成：{sum(r.throughput_7day)}",
+    ]
+    if r.bottleneck:
+        lines.append(f"- 当前瓶颈：{r.bottleneck}")
+    if r.error_types:
+        top_errors = sorted(r.error_types.items(), key=lambda x: x[1], reverse=True)[:3]
+        lines.append("- 错误类型 Top:")
+        for err_type, count in top_errors:
+            lines.append(f"  - `{err_type}`: {count}")
+    return "\n".join(lines)
+
+
+def sync_to_feishu_daily_log(r, *, bridge=None) -> bool:
+    if os.getenv("FEISHU_DAILY_BRIEFING_ENABLED", "true").strip().lower() in {"0", "false", "off"}:
+        print("ℹ️ FEISHU_DAILY_BRIEFING_ENABLED=false，跳过飞书同步")
+        return False
+
+    section_title = os.getenv("FEISHU_DAILY_BRIEFING_SECTION", "每日进度日志").strip() or "每日进度日志"
+    document_id = os.getenv("FEISHU_DAILY_BRIEFING_DOC_TOKEN", "").strip() or None
+    markdown = build_feishu_log_entry(r)
+    created_bridge = False
+
+    try:
+        active_bridge = bridge
+        if active_bridge is None:
+            active_bridge = build_bridge_from_env()
+            created_bridge = True
+        active_bridge.append_markdown(markdown, section_title=section_title, document_id=document_id)
+        print(f"✅ 飞书日志同步成功（section={section_title}）")
+        return True
+    except FeishuBridgeError as exc:
+        print(f"⚠️ 飞书日志同步失败: {exc}")
+        return False
+    finally:
+        if created_bridge:
+            active_bridge.close()
+
+
 def main(mock: bool = False):
     print(f"🌅 [Daily Briefing] 生成早报...")
     r = collect()
@@ -180,6 +227,7 @@ def main(mock: bool = False):
         print("✅ Daily Briefing 推送成功")
     else:
         print("⚠️ 推送失败，本地输出：\n" + report.replace("<b>", "").replace("</b>", ""))
+    sync_to_feishu_daily_log(r)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
