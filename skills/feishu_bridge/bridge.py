@@ -14,16 +14,15 @@ import time
 import uuid
 from datetime import datetime, timezone
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any
 
 import httpx
 from dotenv import load_dotenv
+from agos.config import agent_log_file
 
 DEFAULT_BASE_URL = "https://open.feishu.cn"
 DEFAULT_DOC_TOKEN = "H6ZfwwCcGiTMC2k5YgBcTBO3nKe"
-_LOG_PATH = Path("logs/bridge.log")
-_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+_LOG_PATH = agent_log_file("feishu_bridge")
 _LOGGER = logging.getLogger("feishu_bridge")
 if not _LOGGER.handlers:
     _LOGGER.setLevel(logging.INFO)
