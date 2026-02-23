@@ -1,6 +1,7 @@
 """axiom_synthesizer 结构化错误与成功路径测试。"""
 
 import json
+from pathlib import Path
 
 import agents.axiom_synthesizer.synthesizer as synth
 
@@ -74,3 +75,19 @@ def test_synthesize_result_success_with_dict_payload(monkeypatch):
     assert result["ok"] is True
     assert len(result["synthesized"]) == 1
     assert result["synthesized"][0]["name"] == "Feedback Loop"
+
+
+def test_create_axiom_notes_skips_when_legacy_root_note_exists(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(synth, "get_vault", lambda: tmp_path)
+    monkeypatch.setattr(synth, "INBOX_FOLDER", "00_inbox")
+
+    legacy_note = tmp_path / "Axiom - Existing.md"
+    legacy_note.write_text("# Existing", encoding="utf-8")
+
+    created = synth.create_axiom_notes(
+        [{"name": "Existing", "meaning": "already exists in legacy path", "sources": []}],
+        dry_run=False,
+    )
+
+    assert created == []
+    assert not (tmp_path / "00_inbox" / "Axioms" / "Axiom - Existing.md").exists()

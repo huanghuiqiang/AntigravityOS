@@ -355,6 +355,12 @@ def update_map(synthesized: list[dict], dry_run: bool = False) -> list[str]:
 
 def create_axiom_notes(synthesized: list[dict], dry_run: bool = False) -> list[str]:
     created = []
+    
+    # 确定目标文件夹（00_inbox 下的独立文件夹）
+    target_dir = get_vault() / INBOX_FOLDER / "Axioms"
+    if not dry_run:
+        target_dir.mkdir(parents=True, exist_ok=True)
+
     for axiom in synthesized:
         name = axiom.get("name", "")
         meaning = axiom.get("meaning", "")
@@ -364,9 +370,11 @@ def create_axiom_notes(synthesized: list[dict], dry_run: bool = False) -> list[s
 
         safe_name = re.sub(r'[\\/*?:"<>|]', "", name)[:80].strip()
         filename = f"Axiom - {safe_name}.md"
-        note_path = get_vault() / filename
+        note_path = target_dir / filename
+        legacy_note_path = get_vault() / filename
 
-        if note_path.exists():
+        # Backward compatibility: older versions wrote notes into vault root.
+        if note_path.exists() or legacy_note_path.exists():
             continue
 
         today = datetime.now().strftime("%Y-%m-%d")
