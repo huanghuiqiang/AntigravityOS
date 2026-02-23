@@ -667,32 +667,67 @@ class FeishuDocBridge:
                     return block_id_str
         return None
 
+    @staticmethod
+    def _extract_blocks_from_convert_data(data: dict[str, Any]) -> list[dict[str, Any]]:
+        blocks = data.get("blocks") or data.get("children") or []
+        if isinstance(blocks, list):
+            return [b for b in blocks if isinstance(b, dict)]
+        if isinstance(blocks, dict):
+            first_level_ids = data.get("first_level_block_ids") or []
+            if isinstance(first_level_ids, list) and first_level_ids:
+                ordered: list[dict[str, Any]] = []
+                for bid in first_level_ids:
+                    item = blocks.get(str(bid))
+                    if isinstance(item, dict):
+                        ordered.append(item)
+                if ordered:
+                    return ordered
+            return [v for v in blocks.values() if isinstance(v, dict)]
+        return []
+
     def _convert_markdown_to_blocks(self, markdown: str, document_id: str | None = None) -> list[dict[str, Any]]:
-        doc_id = self._doc_id(document_id)
         payloads = [
             {
-                "document_id": doc_id,
-                "from": "markdown",
-                "to": "block",
-                "content": markdown,
+                "path": "/open-apis/docx/v1/documents/blocks/convert",
+                "body": {
+                    "content_type": "markdown",
+                    "content": markdown,
+                },
+            },
+            # Legacy compatibility path.
+            {
+                "path": "/open-apis/docx/v1/documents/convert",
+                "body": {
+                    "from": "markdown",
+                    "to": "block",
+                    "content": markdown,
+                },
             },
             {
-                "from": "markdown",
-                "to": "docx_block",
-                "content": markdown,
+                "path": "/open-apis/docx/v1/documents/convert",
+                "body": {
+                    "from": "markdown",
+                    "to": "docx_block",
+                    "content": markdown,
+                },
             },
         ]
+        if document_id:
+            # Keep backward compatibility for older server behavior that expected document_id.
+            payloads[1]["body"]["document_id"] = self._doc_id(document_id)
+            payloads[2]["body"]["document_id"] = self._doc_id(document_id)
+
         last_error: Exception | None = None
 
         for payload in payloads:
             try:
                 data = self._request(
                     "POST",
-                    "/open-apis/docx/v1/documents/convert",
-                    json_body=payload,
+                    payload["path"],
+                    json_body=payload["body"],
                 ).get("data", {})
-                blocks = data.get("blocks") or data.get("children") or []
-                if isinstance(blocks, list) and blocks:
+                blocks = self._extract_blocks_from_convert_data(data)
+                if blocks:
                     return blocks
             except Exception as exc:  # pragma: no cover - failover path
                 last_error = exc
@@ -740,33 +775,48 @@ class FeishuDocBridge:
         markdown: str,
         document_id: str | None = None,
     ) -> list[dict[str, Any]]:
-        doc_id = self._doc_id(document_id)
         payloads = [
             {
-                "document_id": doc_id,
-                "from": "markdown",
-                "to": "block",
-                "content": markdown,
+                "path": "/open-apis/docx/v1/documents/blocks/convert",
+                "body": {
+                    "content_type": "markdown",
+                    "content": markdown,
+                },
             },
             {
-                "from": "markdown",
-                "to": "docx_block",
-                "content": markdown,
+                "path": "/open-apis/docx/v1/documents/convert",
+                "body": {
+                    "from": "markdown",
+                    "to": "block",
+                    "content": markdown,
+                },
+            },
+            {
+                "path": "/open-apis/docx/v1/documents/convert",
+                "body": {
+                    "from": "markdown",
+                    "to": "docx_block",
+                    "content": markdown,
+                },
             },
         ]
+        if document_id:
+            payloads[1]["body"]["document_id"] = self._doc_id(document_id)
+            payloads[2]["body"]["document_id"] = self._doc_id(document_id)
+
         for payload in payloads:
             try:
                 data = (await self._request_async(
                     "POST",
-                    "/open-apis/docx/v1/documents/convert",
-                    json_body=payload,
+                    payload["path"],
+                    json_body=payload["body"],
                 )).get("data", {})
-                blocks = data.get("blocks") or data.get("children") or []
-                if isinstance(blocks, list) and blocks:
+                blocks = self._extract_blocks_from_convert_data(data)
+                if blocks:
                     return blocks
             except Exception:
                 continue
-        return self._convert_markdown_to_blocks(markdown, doc_id)
+        return self._convert_markdown_to_blocks(markdown, document_id)
 
     def append_markdown(
         self,
@@ -1082,11 +1132,9 @@ class FeishuDocBridge:
         try:
             self._request(
                 "POST",
-                "/open-apis/docx/v1/documents/convert",
+                "/open-apis/docx/v1/documents/blocks/convert",
                 json_body={
-                    "document_id": target_doc,
-                    "from": "markdown",
-                    "to": "block",
+                    "content_type": "markdown",
                     "content": "permission probe",
                 },
             )
@@ -1163,11 +1211,9 @@ class FeishuDocBridge:
         try:
             await self._request_async(
                 "POST",
-                "/open-apis/docx/v1/documents/convert",
+                "/open-apis/docx/v1/documents/blocks/convert",
                 json_body={
-                    "document_id": target_doc,
-                    "from": "markdown",
-                    "to": "block",
+                    "content_type": "markdown",
                     "content": "permission probe",
                 },
             )

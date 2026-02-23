@@ -79,7 +79,7 @@ def test_refresh_token_after_401() -> None:
             if calls["doc"] == 1:
                 return httpx.Response(401, json={"code": 99991661, "msg": "unauthorized"})
             return httpx.Response(200, json={"code": 0, "data": {"document": {"title": "Bridge"}}})
-        if req.url.path.endswith("/open-apis/docx/v1/documents/convert"):
+        if req.url.path.endswith("/open-apis/docx/v1/documents/blocks/convert"):
             return httpx.Response(200, json={"code": 0, "data": {"blocks": [{"block_type": 2}]}})
         if req.url.path.endswith("/open-apis/docx/v1/documents/doc-1/blocks"):
             return httpx.Response(200, json={"code": 0, "data": {"items": []}})
@@ -108,7 +108,7 @@ def test_retry_on_429() -> None:
             if attempts["doc"] < 3:
                 return httpx.Response(429, json={"code": 0, "msg": "rate limited"})
             return httpx.Response(200, json={"code": 0, "data": {"document": {"title": "Ready"}}})
-        if req.url.path.endswith("/open-apis/docx/v1/documents/convert"):
+        if req.url.path.endswith("/open-apis/docx/v1/documents/blocks/convert"):
             return httpx.Response(200, json={"code": 0, "data": {"blocks": [{"block_type": 2}]}})
         if req.url.path.endswith("/open-apis/docx/v1/documents/doc-1/blocks"):
             return httpx.Response(200, json={"code": 0, "data": {"items": []}})
@@ -514,7 +514,7 @@ def test_append_markdown_uses_children_endpoint() -> None:
                 json={"code": 0, "data": {"items": [{"block_id": "root_1", "block_type": 1, "parent_id": ""}]}},
             )
 
-        if req.url.path.endswith("/open-apis/docx/v1/documents/convert"):
+        if req.url.path.endswith("/open-apis/docx/v1/documents/blocks/convert"):
             calls["convert"] += 1
             return httpx.Response(
                 200,
@@ -552,7 +552,7 @@ def test_append_markdown_fallback_normalizes_markdown_symbols() -> None:
                 200,
                 json={"code": 0, "data": {"items": [{"block_id": "root_1", "block_type": 1, "parent_id": ""}]}},
             )
-        if req.url.path.endswith("/open-apis/docx/v1/documents/convert"):
+        if req.url.path.endswith("/open-apis/docx/v1/documents/blocks/convert"):
             return httpx.Response(404, text="not found")
         if req.url.path.endswith("/open-apis/docx/v1/documents/doc-1/blocks/root_1/children"):
             captured["payload"] = json.loads(req.content.decode("utf-8"))
@@ -596,7 +596,7 @@ def test_diagnose_permissions_with_bitable_target() -> None:
         path = req.url.path
         if path.endswith("/open-apis/docx/v1/documents/doc-1"):
             return httpx.Response(200, json={"code": 0, "data": {"document": {"title": "ok"}}})
-        if path.endswith("/open-apis/docx/v1/documents/convert"):
+        if path.endswith("/open-apis/docx/v1/documents/blocks/convert"):
             return httpx.Response(200, json={"code": 0, "data": {"blocks": [{"block_type": 2}]}})
         if path.endswith("/open-apis/bitable/v1/apps/app_x/tables/tbl_x/records") and req.method == "GET":
             return httpx.Response(
@@ -737,7 +737,7 @@ def test_health_contains_probe_breakdown() -> None:
         path = req.url.path
         if path.endswith("/open-apis/docx/v1/documents/doc-1"):
             return httpx.Response(200, json={"code": 0, "data": {"document": {"title": "Bridge"}}})
-        if path.endswith("/open-apis/docx/v1/documents/convert"):
+        if path.endswith("/open-apis/docx/v1/documents/blocks/convert"):
             return httpx.Response(200, json={"code": 0, "data": {"blocks": [{"block_type": 2}]}})
         if path.endswith("/open-apis/docx/v1/documents/doc-1/blocks"):
             return httpx.Response(
