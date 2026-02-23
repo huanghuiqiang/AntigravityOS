@@ -516,6 +516,107 @@ class FeishuDocBridge:
             "url": url,
         }
 
+    def _resolve_bitable_from_doc(self, document_id: str) -> tuple[str, str] | None:
+        data = self._request(
+            "GET",
+            f"/open-apis/docx/v1/documents/{document_id}/blocks",
+            params={"page_size": 500},
+        ).get("data", {})
+        items = data.get("items", []) if isinstance(data.get("items"), list) else []
+        for block in items:
+            if block.get("block_type") != 53:
+                continue
+            ref = block.get("reference_base") if isinstance(block.get("reference_base"), dict) else {}
+            token = str(ref.get("token") or "")
+            if "_tbl" in token:
+                app_token, table_id = token.split("_", 1)
+                if app_token and table_id:
+                    return app_token, table_id
+        return None
+
+    def diagnose_permissions(
+        self,
+        *,
+        document_id: str | None = None,
+        app_token: str | None = None,
+        table_id: str | None = None,
+    ) -> dict[str, Any]:
+        target_doc = (document_id or self.config.document_id).strip()
+        checks: dict[str, Any] = {
+            "doc_read_ok": False,
+            "doc_write_ok": False,
+            "bitable_read_ok": False,
+            "bitable_write_ok": False,
+        }
+        errors: dict[str, str] = {}
+
+        try:
+            self._request("GET", f"/open-apis/docx/v1/documents/{target_doc}")
+            checks["doc_read_ok"] = True
+        except FeishuBridgeError as exc:
+            errors["doc_read_error"] = str(exc)
+
+        # Write capability probe without mutating content: docx convert endpoint.
+        try:
+            self._request(
+                "POST",
+                "/open-apis/docx/v1/documents/convert",
+                json_body={
+                    "document_id": target_doc,
+                    "from": "markdown",
+                    "to": "block",
+                    "content": "permission probe",
+                },
+            )
+            checks["doc_write_ok"] = True
+        except FeishuBridgeError as exc:
+            errors["doc_write_error"] = str(exc)
+
+        resolved = None
+        if app_token and table_id:
+            resolved = (app_token.strip(), table_id.strip())
+        else:
+            try:
+                resolved = self._resolve_bitable_from_doc(target_doc)
+            except FeishuBridgeError as exc:
+                errors["bitable_resolve_error"] = str(exc)
+
+        if resolved:
+            app, tbl = resolved
+            try:
+                recs = self._request(
+                    "GET",
+                    f"/open-apis/bitable/v1/apps/{app}/tables/{tbl}/records",
+                    params={"page_size": 1},
+                ).get("data", {})
+                checks["bitable_read_ok"] = True
+                first = (recs.get("items") or [None])[0]
+                if first and isinstance(first, dict) and first.get("record_id"):
+                    record_id = str(first["record_id"])
+                    fields = first.get("fields") if isinstance(first.get("fields"), dict) else {}
+                    # Best-effort write probe: no-op update using existing fields.
+                    probe_fields = fields if fields else {"_probe": "noop"}
+                    self.update_bitable(app, tbl, record_id, probe_fields)
+                    checks["bitable_write_ok"] = True
+                else:
+                    errors["bitable_write_error"] = "bitable 无记录，跳过写权限探测"
+            except FeishuBridgeError as exc:
+                msg = str(exc)
+                if not checks["bitable_read_ok"]:
+                    errors["bitable_read_error"] = msg
+                else:
+                    errors["bitable_write_error"] = msg
+        else:
+            errors["bitable_target_error"] = "未提供 app_token/table_id，且文档中未解析到多维表格"
+
+        return {
+            "success": True,
+            "document_id": target_doc,
+            "bitable_target": {"app_token": resolved[0], "table_id": resolved[1]} if resolved else None,
+            "checks": checks,
+            "errors": errors,
+        }
+
 
 def build_bridge_from_env() -> FeishuDocBridge:
     return FeishuDocBridge(BridgeConfig.from_env())

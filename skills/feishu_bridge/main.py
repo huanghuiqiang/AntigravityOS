@@ -33,6 +33,12 @@ class CreateSubDocRequest(BaseModel):
     folder_token: str | None = None
 
 
+class DiagnosePermissionsRequest(BaseModel):
+    document_id: str | None = None
+    app_token: str | None = None
+    table_id: str | None = None
+
+
 app = FastAPI(title="Local Feishu Document Bridge", version="1.0.0")
 _bridge_lock = Lock()
 _bridge_singleton = None
@@ -137,6 +143,19 @@ def create_sub_doc(payload: CreateSubDocRequest) -> dict:
         return bridge.create_sub_doc(
             title=payload.title,
             folder_token=payload.folder_token,
+        )
+    except FeishuBridgeError as exc:
+        return _error_response(exc)
+
+
+@app.post("/diagnose_permissions")
+def diagnose_permissions(payload: DiagnosePermissionsRequest) -> dict:
+    try:
+        bridge = _get_bridge()
+        return bridge.diagnose_permissions(
+            document_id=payload.document_id,
+            app_token=payload.app_token,
+            table_id=payload.table_id,
         )
     except FeishuBridgeError as exc:
         return _error_response(exc)

@@ -513,3 +513,32 @@ def test_append_markdown_raises_when_section_not_found() -> None:
     with pytest.raises(Exception) as exc:
         bridge.append_markdown("line", section_title="不存在章节")
     assert "section 不存在" in str(exc.value)
+
+
+def test_diagnose_permissions_with_bitable_target() -> None:
+    def handler(req: httpx.Request) -> httpx.Response:
+        path = req.url.path
+        if path.endswith("/open-apis/docx/v1/documents/doc-1"):
+            return httpx.Response(200, json={"code": 0, "data": {"document": {"title": "ok"}}})
+        if path.endswith("/open-apis/docx/v1/documents/convert"):
+            return httpx.Response(200, json={"code": 0, "data": {"blocks": [{"block_type": 2}]}})
+        if path.endswith("/open-apis/bitable/v1/apps/app_x/tables/tbl_x/records") and req.method == "GET":
+            return httpx.Response(
+                200,
+                json={"code": 0, "data": {"items": [{"record_id": "rec_1", "fields": {"Status": "进行中"}}]}},
+            )
+        if path.endswith("/open-apis/bitable/v1/apps/app_x/tables/tbl_x/records/rec_1"):
+            return httpx.Response(200, json={"code": 0, "data": {"record": {"record_id": "rec_1"}}})
+        raise AssertionError(f"unexpected {req.method} path: {path}")
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    bridge = FeishuDocBridge(BridgeConfig(app_id="id", app_secret="secret", document_id="doc-1"), client=client)
+    bridge._tenant_access_token = "token"
+    bridge._token_expire_at = 9999999999
+
+    result = bridge.diagnose_permissions(document_id="doc-1", app_token="app_x", table_id="tbl_x")
+    checks = result["checks"]
+    assert checks["doc_read_ok"] is True
+    assert checks["doc_write_ok"] is True
+    assert checks["bitable_read_ok"] is True
+    assert checks["bitable_write_ok"] is True
