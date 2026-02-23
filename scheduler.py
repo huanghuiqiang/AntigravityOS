@@ -32,6 +32,11 @@ AGENTS = {
         "log_file": agent_log_file("knowledge_auditor"),
         "schedule": {"day_of_week": "monday", "hour": 9, "minute": 0} # Every Monday at 09:00
     },
+    "weekly-report-sync": {
+        "command": [PYTHON_BIN, "agents/daily_briefing/weekly_report_sync.py"],
+        "log_file": agent_log_file("weekly_report_sync"),
+        "schedule": {"day_of_week": "monday", "hour": 9, "minute": 10} # Every Monday at 09:10
+    },
     "inbox-processor": {
         "command": [PYTHON_BIN, "agents/inbox_processor/inbox_processor.py"],
         "log_file": agent_log_file("inbox_processor"),
