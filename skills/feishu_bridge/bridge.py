@@ -110,6 +110,7 @@ class FeishuDocBridge:
         self._async_client = httpx.AsyncClient(timeout=20.0)
         self._tenant_access_token = ""
         self._token_expire_at = 0.0
+        self._section_cache: dict[tuple[str, str], str] = {}
 
     def close(self) -> None:
         self._client.close()
@@ -624,14 +625,21 @@ class FeishuDocBridge:
         if not section_title:
             return None
 
+        doc_id = self._doc_id(document_id)
         target = section_title.strip()
         normalized_target = self._normalize_section_title(target)
-        for block in self._list_blocks(document_id):
+        cache_key = (doc_id, normalized_target)
+        if cache_key in self._section_cache:
+            return self._section_cache[cache_key]
+
+        for block in self._list_blocks(doc_id):
             text = self._extract_block_text(block)
             if text == target or self._normalize_section_title(text) == normalized_target:
                 block_id = block.get("block_id") or block.get("id")
                 if block_id:
-                    return str(block_id)
+                    block_id_str = str(block_id)
+                    self._section_cache[cache_key] = block_id_str
+                    return block_id_str
         return None
 
     async def _find_section_block_id_async(
@@ -642,14 +650,21 @@ class FeishuDocBridge:
         if not section_title:
             return None
 
+        doc_id = self._doc_id(document_id)
         target = section_title.strip()
         normalized_target = self._normalize_section_title(target)
-        for block in await self._list_blocks_async(document_id):
+        cache_key = (doc_id, normalized_target)
+        if cache_key in self._section_cache:
+            return self._section_cache[cache_key]
+
+        for block in await self._list_blocks_async(doc_id):
             text = self._extract_block_text(block)
             if text == target or self._normalize_section_title(text) == normalized_target:
                 block_id = block.get("block_id") or block.get("id")
                 if block_id:
-                    return str(block_id)
+                    block_id_str = str(block_id)
+                    self._section_cache[cache_key] = block_id_str
+                    return block_id_str
         return None
 
     def _convert_markdown_to_blocks(self, markdown: str, document_id: str | None = None) -> list[dict[str, Any]]:

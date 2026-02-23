@@ -193,6 +193,31 @@ def test_find_section_block_id_with_normalized_title() -> None:
     assert bridge._find_section_block_id("快速任务列表") == "b-4"
 
 
+def test_find_section_block_id_uses_cache() -> None:
+    calls = {"blocks": 0}
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        if req.url.path.endswith("/open-apis/docx/v1/documents/doc-1/blocks"):
+            calls["blocks"] += 1
+            return httpx.Response(
+                200,
+                json={
+                    "code": 0,
+                    "data": {"items": [{"block_id": "b-9", "text": {"elements": [{"text_run": {"content": "章节A"}}]}}]},
+                },
+            )
+        raise AssertionError(f"unexpected path: {req.url.path}")
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    bridge = FeishuDocBridge(BridgeConfig(app_id="id", app_secret="secret", document_id="doc-1"), client=client)
+    bridge._tenant_access_token = "token"
+    bridge._token_expire_at = 9999999999
+
+    assert bridge._find_section_block_id("章节A") == "b-9"
+    assert bridge._find_section_block_id("章节A") == "b-9"
+    assert calls["blocks"] == 1
+
+
 def test_health_returns_error_payload_when_env_missing(monkeypatch) -> None:
     if not FASTAPI_AVAILABLE:
         pytest.skip("fastapi not installed")
