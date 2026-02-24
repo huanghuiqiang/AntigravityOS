@@ -463,7 +463,13 @@ def test_append_markdown_returns_400_for_empty_markdown(monkeypatch) -> None:
     from skills.feishu_bridge import main as main_module
 
     class _Bridge:
-        def append_markdown(self, markdown: str, section_title: str | None = None) -> dict:
+        def append_markdown(
+            self,
+            markdown: str,
+            section_title: str | None = None,
+            document_id: str | None = None,
+        ) -> dict:
+            _ = document_id
             raise main_module.FeishuBridgeError("markdown 不能为空")
 
         def close(self) -> None:
@@ -485,7 +491,8 @@ def test_bridge_singleton_reuses_same_instance(monkeypatch) -> None:
     calls = {"build": 0}
 
     class _Bridge:
-        def health(self):
+        def health(self, document_id: str | None = None):
+            _ = document_id
             return {"success": True}
 
         def close(self):
