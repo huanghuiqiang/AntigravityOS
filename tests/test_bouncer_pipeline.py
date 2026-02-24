@@ -2,6 +2,7 @@
 
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
+from datetime import datetime
 
 
 def _load_bouncer_module():
@@ -37,7 +38,8 @@ def test_export_to_inbox_writes_note(tmp_vault):
         axiom="Feedback loops beat one-shot optimization.",
     )
 
-    note_path = tmp_vault / "00_Inbox" / "Bouncer - AB Test Practical Systems.md"
+    date_str = datetime.now().strftime("%Y-%m-%d")
+    note_path = tmp_vault / "00_Inbox" / date_str / "Bouncer - AB Test Practical Systems.md"
     assert note_path.exists(), "expected bouncer note written to Inbox"
     content = note_path.read_text(encoding="utf-8")
     assert "status: pending" in content

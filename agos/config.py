@@ -74,6 +74,16 @@ def bouncer_state_file() -> Path:
     return state_dir() / "processed_urls.json"
 
 
+def bouncer_dedup_db_file() -> Path:
+    """Bouncer 去重索引数据库文件。"""
+    return state_dir() / "bouncer_dedup.sqlite3"
+
+
+def bouncer_lock_file() -> Path:
+    """Bouncer 进程锁文件。"""
+    return state_dir() / "bouncer.lock"
+
+
 def bouncer_feed_config_file() -> Path:
     """Bouncer RSS 配置文件。"""
     return _PROJECT_ROOT / "agents" / "cognitive_bouncer" / "config.json"
@@ -83,7 +93,8 @@ def bouncer_feed_config_file() -> Path:
 
 def openrouter_api_key() -> str:
     """OpenRouter API Key（兼容旧的 GEMINI_API_KEY 命名）。"""
-    return os.getenv("OPENROUTER_API_KEY") or os.getenv("GEMINI_API_KEY", "")
+    value = os.getenv("OPENROUTER_API_KEY") or os.getenv("GEMINI_API_KEY")
+    return value if isinstance(value, str) else ""
 
 
 # ── Telegram ──────────────────────────────────────────────────────
@@ -99,7 +110,8 @@ def telegram_bot_token() -> str:
     try:
         with open(openclaw_cfg) as f:
             cfg = json.load(f)
-        return cfg.get("channels", {}).get("telegram", {}).get("botToken", "")
+        token = cfg.get("channels", {}).get("telegram", {}).get("botToken")
+        return token if isinstance(token, str) else ""
     except Exception:
         return ""
 
@@ -125,6 +137,27 @@ def model_synthesizer() -> str:
 
 def min_score_threshold() -> float:
     return float(os.getenv("MIN_SCORE_THRESHOLD", "8.0"))
+
+
+def bouncer_dedup_alert_threshold() -> float:
+    return float(os.getenv("BOUNCER_DEDUP_ALERT_THRESHOLD", "30.0"))
+
+
+def bouncer_alert_suppress_minutes() -> int:
+    return int(os.getenv("BOUNCER_ALERT_SUPPRESS_MINUTES", "360"))
+
+
+def bouncer_dedup_query_drop_prefixes() -> list[str]:
+    raw = os.getenv("BOUNCER_DEDUP_QUERY_DROP_PREFIXES", "utm_")
+    return [x.strip().lower() for x in raw.split(",") if x.strip()]
+
+
+def bouncer_dedup_query_drop_keys() -> set[str]:
+    raw = os.getenv(
+        "BOUNCER_DEDUP_QUERY_DROP_KEYS",
+        "spm,from,igshid,fbclid,gclid,mc_cid,mc_eid,ref",
+    )
+    return {x.strip().lower() for x in raw.split(",") if x.strip()}
 
 
 def synth_max_batch() -> int:

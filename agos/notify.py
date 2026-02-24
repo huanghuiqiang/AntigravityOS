@@ -4,8 +4,9 @@ agos.notify
 Telegram 推送的唯一入口。
 消灭其他 agent 通过 sys.path.insert hack 引用 bouncer/telegram_notify.py 的反模式。
 """
+from __future__ import annotations
 
-import requests
+import requests  # type: ignore[import-untyped]
 
 from agos.config import telegram_bot_token, telegram_chat_id
 
@@ -95,3 +96,22 @@ def send_bouncer_report(golden_articles: list, total_scanned: int) -> bool:
         lines.append("")
 
     return send_message("\n".join(lines))
+
+
+def send_bouncer_dedup_alert(
+    *,
+    dedup_rate: float,
+    deduped_count: int,
+    fetched_count: int,
+    trace_id: str,
+    by_feed_lines: list[str],
+) -> bool:
+    feed_text = "\n".join(by_feed_lines) if by_feed_lines else "无 feed 细分数据"
+    text = (
+        "⚠️ <b>Cognitive Bouncer 去重率告警</b>\n\n"
+        f"去重率: <b>{dedup_rate:.2f}%</b>\n"
+        f"去重数: <b>{deduped_count}</b> / 抓取数: <b>{fetched_count}</b>\n"
+        f"trace_id: <code>{trace_id}</code>\n\n"
+        f"{feed_text}"
+    )
+    return send_message(text)
