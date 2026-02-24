@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import sys
 from pathlib import Path
 
 
@@ -15,7 +16,7 @@ def test_rollback_manifest_apply(tmp_path: Path) -> None:
     manifest.write_text(json.dumps({"from": str(source), "to": str(archived)}) + "\n", encoding="utf-8")
 
     cmd = [
-        ".venv/bin/python",
+        sys.executable,
         "scripts/rollback_dedup_manifest.py",
         "--manifest",
         str(manifest),
