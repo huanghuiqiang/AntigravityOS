@@ -1,14 +1,126 @@
 """
 agos.notify
 ──────────────────
-Telegram 推送的唯一入口。
-消灭其他 agent 通过 sys.path.insert hack 引用 bouncer/telegram_notify.py 的反模式。
+系统通知统一入口，支持路由、去重、冷却窗口与启动静默。
 """
 from __future__ import annotations
 
+import json
+import sqlite3
+import time
+from pathlib import Path
+from typing import Any
+
 import requests  # type: ignore[import-untyped]
 
-from agos.config import telegram_bot_token, telegram_chat_id
+from agos.config import (
+    feishu_bot_secret,
+    feishu_bot_webhook,
+    log_dir,
+    notify_dedup_db_file,
+    notify_default_cooldown_minutes,
+    notify_provider,
+    notify_startup_silence_minutes,
+    notify_system_alerts_enabled,
+    telegram_bot_token,
+    telegram_chat_id,
+)
+from skills.feishu_bot_sender import FeishuBotSendError, send_feishu_webhook
+
+_START_TS = int(time.time())
+_AUDIT_LOG_FILE = log_dir() / "notify_audit.log"
+
+
+def _now_ts() -> int:
+    return int(time.time())
+
+
+def _dedup_db() -> Path:
+    db_path = notify_dedup_db_file()
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    return db_path
+
+
+def _connect_db() -> sqlite3.Connection:
+    conn = sqlite3.connect(_dedup_db())
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS alert_events (
+            event_key TEXT PRIMARY KEY,
+            last_state TEXT NOT NULL,
+            last_sent_at INTEGER NOT NULL,
+            last_channel TEXT NOT NULL,
+            last_trace_id TEXT NOT NULL,
+            updated_at INTEGER NOT NULL
+        )
+        """
+    )
+    conn.commit()
+    return conn
+
+
+def _audit(payload: dict[str, Any]) -> None:
+    line = json.dumps(payload, ensure_ascii=False)
+    with _AUDIT_LOG_FILE.open("a", encoding="utf-8") as fp:
+        fp.write(line + "\n")
+
+
+def _in_startup_silence() -> bool:
+    silence_seconds = notify_startup_silence_minutes() * 60
+    if silence_seconds <= 0:
+        return False
+    return (_now_ts() - _START_TS) < silence_seconds
+
+
+def _send_telegram(text: str) -> bool:
+    token = telegram_bot_token()
+    cid = telegram_chat_id()
+    if not token:
+        print("  ⚠️  [Telegram] 未配置 Bot Token，跳过推送")
+        return False
+    if not cid:
+        print("  ⚠️  [Telegram] 未配置 Chat ID，跳过推送")
+        return False
+    url = f"https://api.telegram.org/bot{token}/sendMessage"
+    try:
+        resp = requests.post(
+            url,
+            json={"chat_id": cid, "text": text, "parse_mode": "HTML"},
+            timeout=15,
+        )
+    except Exception as exc:
+        print(f"  ❌ [Telegram] 异常: {exc}")
+        return False
+    if resp.status_code == 200 and resp.json().get("ok"):
+        return True
+    print(f"  ❌ [Telegram] HTTP {resp.status_code}: {resp.text}")
+    return False
+
+
+def _send_feishu(text: str) -> bool:
+    webhook = feishu_bot_webhook()
+    if not webhook:
+        print("  ⚠️  [Feishu] 未配置 FEISHU_BOT_WEBHOOK，跳过推送")
+        return False
+    try:
+        send_feishu_webhook(
+            webhook=webhook,
+            secret=feishu_bot_secret(),
+            payload={"msg_type": "text", "content": {"text": text}},
+        )
+        return True
+    except FeishuBotSendError as exc:
+        print(f"  ❌ [Feishu] 发送失败: {exc}")
+        return False
+
+
+def _route_send(text: str) -> tuple[bool, str]:
+    provider = notify_provider()
+    if provider == "none":
+        return False, "none"
+    if provider == "telegram":
+        return _send_telegram(text), "telegram"
+    return _send_feishu(text), "feishu"
 
 
 def send_message(
@@ -17,28 +129,19 @@ def send_message(
     parse_mode: str = "HTML",
 ) -> bool:
     """
-    发送消息到 Telegram。
-
-    Args:
-        text:       消息内容（支持 HTML 标签）
-        chat_id:    目标 Chat ID（不传则从配置读取）
-        parse_mode: "HTML" 或 "MarkdownV2"
-
-    Returns:
-        True = 发送成功
+    兼容旧调用：仅发送 Telegram，不参与系统级去重。
     """
+    token = telegram_bot_token()
+    cid = chat_id or telegram_chat_id()
+    if not token:
+        print("  ⚠️  [Telegram] 未配置 Bot Token，跳过推送")
+        return False
+    if not cid:
+        print("  ⚠️  [Telegram] 未配置 Chat ID，跳过推送")
+        return False
+
+    url = f"https://api.telegram.org/bot{token}/sendMessage"
     try:
-        token = telegram_bot_token()
-        cid = chat_id or telegram_chat_id()
-
-        if not token:
-            print("  ⚠️  [Telegram] 未配置 Bot Token，跳过推送")
-            return False
-        if not cid:
-            print("  ⚠️  [Telegram] 未配置 Chat ID，跳过推送")
-            return False
-
-        url = f"https://api.telegram.org/bot{token}/sendMessage"
         resp = requests.post(
             url,
             json={
@@ -48,15 +151,155 @@ def send_message(
             },
             timeout=15,
         )
-
-        if resp.status_code == 200 and resp.json().get("ok"):
-            return True
-        else:
-            print(f"  ❌ [Telegram] HTTP {resp.status_code}: {resp.text}")
-            return False
-    except Exception as e:
-        print(f"  ❌ [Telegram] 异常: {e}")
+    except Exception as exc:
+        print(f"  ❌ [Telegram] 异常: {exc}")
         return False
+
+    if resp.status_code == 200 and resp.json().get("ok"):
+        return True
+    print(f"  ❌ [Telegram] HTTP {resp.status_code}: {resp.text}")
+    return False
+
+
+def send_system_alert(
+    *,
+    event_key: str,
+    level: str,
+    text: str,
+    meta: dict[str, str] | None = None,
+) -> bool:
+    if not notify_system_alerts_enabled():
+        _audit(
+            {
+                "ts": _now_ts(),
+                "event_key": event_key,
+                "level": level,
+                "status": "suppressed_global_switch",
+            }
+        )
+        return False
+
+    if _in_startup_silence():
+        _audit(
+            {
+                "ts": _now_ts(),
+                "event_key": event_key,
+                "level": level,
+                "status": "suppressed_startup_silence",
+            }
+        )
+        return False
+
+    payload_meta = meta or {}
+    state = payload_meta.get("state", "fail")
+    trace_id = payload_meta.get("trace_id", "")
+    component = payload_meta.get("component", "unknown")
+    cooldown_sec = notify_default_cooldown_minutes() * 60
+
+    dedup_hit = False
+    conn = _connect_db()
+    try:
+        row = conn.execute(
+            "SELECT last_state, last_sent_at FROM alert_events WHERE event_key = ?",
+            (event_key,),
+        ).fetchone()
+        now_ts = _now_ts()
+        should_send = True
+        if row is not None:
+            last_state = str(row[0])
+            last_sent_at = int(row[1])
+            if state == last_state and (now_ts - last_sent_at) < cooldown_sec:
+                should_send = False
+                dedup_hit = True
+
+        if not should_send:
+            _audit(
+                {
+                    "ts": now_ts,
+                    "component": component,
+                    "event_key": event_key,
+                    "level": level,
+                    "status": "suppressed_dedup",
+                    "state": state,
+                    "trace_id": trace_id,
+                    "dedup_hit": True,
+                }
+            )
+            return False
+
+        ok, channel = _route_send(text)
+        conn.execute(
+            """
+            INSERT INTO alert_events(event_key, last_state, last_sent_at, last_channel, last_trace_id, updated_at)
+            VALUES(?, ?, ?, ?, ?, ?)
+            ON CONFLICT(event_key) DO UPDATE SET
+                last_state=excluded.last_state,
+                last_sent_at=excluded.last_sent_at,
+                last_channel=excluded.last_channel,
+                last_trace_id=excluded.last_trace_id,
+                updated_at=excluded.updated_at
+            """,
+            (event_key, state, now_ts, channel, trace_id, now_ts),
+        )
+        conn.commit()
+        _audit(
+            {
+                "ts": now_ts,
+                "component": component,
+                "event_key": event_key,
+                "level": level,
+                "status": "sent" if ok else "send_failed",
+                "state": state,
+                "trace_id": trace_id,
+                "channel": channel,
+                "dedup_hit": dedup_hit,
+            }
+        )
+        return ok
+    finally:
+        conn.close()
+
+
+def list_recent_alert_events(limit: int = 20) -> list[dict[str, str | int]]:
+    conn = _connect_db()
+    try:
+        rows = conn.execute(
+            """
+            SELECT event_key, last_state, last_sent_at, last_channel, last_trace_id, updated_at
+            FROM alert_events
+            ORDER BY updated_at DESC
+            LIMIT ?
+            """,
+            (max(1, limit),),
+        ).fetchall()
+        out: list[dict[str, str | int]] = []
+        for row in rows:
+            out.append(
+                {
+                    "event_key": str(row[0]),
+                    "last_state": str(row[1]),
+                    "last_sent_at": int(row[2]),
+                    "last_channel": str(row[3]),
+                    "last_trace_id": str(row[4]),
+                    "updated_at": int(row[5]),
+                }
+            )
+        return out
+    finally:
+        conn.close()
+
+
+def clear_alert_events(event_key: str | None = None) -> int:
+    conn = _connect_db()
+    try:
+        if event_key:
+            cursor = conn.execute("DELETE FROM alert_events WHERE event_key = ?", (event_key,))
+        else:
+            cursor = conn.execute("DELETE FROM alert_events")
+        conn.commit()
+        return int(cursor.rowcount)
+    finally:
+        conn.close()
 
 
 def send_bouncer_report(golden_articles: list, total_scanned: int) -> bool:

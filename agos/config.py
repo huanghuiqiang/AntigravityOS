@@ -121,6 +121,35 @@ def telegram_chat_id() -> str:
     return os.getenv("TELEGRAM_CHAT_ID", "")
 
 
+# ── 通知治理 ──────────────────────────────────────────────────────
+
+def notify_provider() -> str:
+    """系统通知通道：feishu | telegram | none。"""
+    provider = os.getenv("NOTIFY_PROVIDER", "feishu").strip().lower()
+    if provider in {"feishu", "telegram", "none"}:
+        return provider
+    return "feishu"
+
+
+def notify_system_alerts_enabled() -> bool:
+    return os.getenv("NOTIFY_SYSTEM_ALERTS_ENABLED", "true").strip().lower() not in {"0", "false", "off"}
+
+
+def notify_startup_silence_minutes() -> int:
+    return max(0, int(os.getenv("NOTIFY_STARTUP_SILENCE_MINUTES", "10")))
+
+
+def notify_default_cooldown_minutes() -> int:
+    return max(0, int(os.getenv("NOTIFY_DEFAULT_COOLDOWN_MINUTES", "60")))
+
+
+def notify_dedup_db_file() -> Path:
+    custom_path = os.getenv("NOTIFY_DEDUP_DB_FILE", "").strip()
+    if custom_path:
+        return Path(custom_path)
+    return state_dir() / "notify.sqlite3"
+
+
 # ── 模型 ──────────────────────────────────────────────────────────
 
 def model_bouncer() -> str:

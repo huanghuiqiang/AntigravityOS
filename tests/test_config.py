@@ -8,6 +8,7 @@ from agos.config import (
     model_bouncer, model_synthesizer,
     min_score_threshold, project_root,
     commit_digest_repos, feishu_bot_msg_type,
+    notify_provider, notify_system_alerts_enabled,
 )
 
 
@@ -78,3 +79,17 @@ class TestCommitDigest:
     def test_feishu_bot_msg_type_normalized(self, monkeypatch):
         monkeypatch.setenv("FEISHU_BOT_MSG_TYPE", "TEXT")
         assert feishu_bot_msg_type() == "text"
+
+
+class TestNotifyConfig:
+    def test_notify_provider_default(self, monkeypatch):
+        monkeypatch.delenv("NOTIFY_PROVIDER", raising=False)
+        assert notify_provider() == "feishu"
+
+    def test_notify_provider_normalized(self, monkeypatch):
+        monkeypatch.setenv("NOTIFY_PROVIDER", "TeLeGrAm")
+        assert notify_provider() == "telegram"
+
+    def test_notify_switch(self, monkeypatch):
+        monkeypatch.setenv("NOTIFY_SYSTEM_ALERTS_ENABLED", "off")
+        assert notify_system_alerts_enabled() is False

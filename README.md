@@ -50,12 +50,20 @@ cp .env.example .env
 - `TELEGRAM_CHAT_ID`
 - `GITHUB_TOKEN`（调用 GitHub 工具时需要）
 - `OBSIDIAN_VAULT`（本机运行请设为真实本地路径）
+- `NOTIFY_PROVIDER`（建议 `feishu`）
+- `NOTIFY_SYSTEM_ALERTS_ENABLED`（系统告警总开关）
 
 ## Docker 启动
 
 ```bash
 docker compose up -d scheduler feishu-bridge tool-gateway
 docker compose ps
+```
+
+手动任务（仅在需要时执行，不随生产常驻启动）：
+
+```bash
+docker compose --profile manual up -d cognitive-bouncer inbox-processor daily-briefing knowledge-auditor axiom-synthesizer
 ```
 
 默认端口：

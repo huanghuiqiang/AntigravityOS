@@ -56,24 +56,29 @@ services:
   cognitive-bouncer:
     extends:
       service: antigravity-base
+    profiles: ["manual"]
     command: [ "python", "agents/cognitive_bouncer/bouncer.py" ] # For manual run
 
   inbox-processor:
     extends:
       service: antigravity-base
+    profiles: ["manual"]
     command: [ "python", "agents/inbox_processor/inbox_processor.py" ] # For manual run
 
   axiom-synthesizer:
     extends:
       service: antigravity-base
+    profiles: ["manual"]
     command: [ "python", "agents/axiom_synthesizer/synthesizer.py" ] # For manual run
 
   daily-briefing:
     extends:
       service: antigravity-base
+    profiles: ["manual"]
     command: [ "python", "agents/daily_briefing/daily_briefing.py" ] # For manual run
 
   knowledge-auditor:
     extends:
       service: antigravity-base
+    profiles: ["manual"]
     command: [ "python", "agents/knowledge_auditor/auditor.py" ] # For manual run

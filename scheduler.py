@@ -8,7 +8,7 @@ from datetime import datetime
 
 from agos.config import agent_log_file, project_root
 from agos.config import commit_digest_cron, commit_digest_enabled
-from agos.notify import send_message
+from agos.notify import send_system_alert
 
 ROOT = project_root()
 PYTHON_BIN = os.getenv("PYTHON_BIN", "python")
@@ -79,6 +79,7 @@ def _notify_failure(agent_name: str, run_id: str, exit_code: int, log_path: Path
     if os.getenv("SCHEDULER_ALERT_ON_FAILURE", "true").strip().lower() in {"0", "false", "off"}:
         return
     trace_ids = _extract_trace_ids(details)
+    trace_id = trace_ids[0] if trace_ids else run_id
     lines = [
         "🚨 <b>Scheduler 任务失败告警</b>",
         f"Agent: <code>{agent_name}</code>",
@@ -88,7 +89,33 @@ def _notify_failure(agent_name: str, run_id: str, exit_code: int, log_path: Path
     ]
     if trace_ids:
         lines.append(f"Trace IDs: <code>{', '.join(trace_ids[:5])}</code>")
-    send_message("\n".join(lines))
+    send_system_alert(
+        event_key=f"scheduler:{agent_name}",
+        level="CRITICAL",
+        text="\n".join(lines),
+        meta={
+            "state": "fail",
+            "trace_id": trace_id,
+            "component": "scheduler",
+        },
+    )
+
+
+def _notify_recovery(agent_name: str, run_id: str) -> None:
+    send_system_alert(
+        event_key=f"scheduler:{agent_name}",
+        level="INFO",
+        text=(
+            "✅ <b>Scheduler 任务恢复</b>\n"
+            f"Agent: <code>{agent_name}</code>\n"
+            f"Run ID: <code>{run_id}</code>"
+        ),
+        meta={
+            "state": "recover",
+            "trace_id": run_id,
+            "component": "scheduler",
+        },
+    )
 
 
 def run_agent(agent_name, command, log_file):
@@ -116,6 +143,7 @@ def run_agent(agent_name, command, log_file):
 {result.stderr}""")
                 f.write(f"\n--- END run_id={run_id} | exit_code=0 ---\n")
                 print(f"[{timestamp}] Agent {agent_name} finished successfully.")
+                _notify_recovery(agent_name, run_id)
             except subprocess.CalledProcessError as e:
                 error_blob = f"{e.stdout}\n{e.stderr}"
                 f.write(f"""--- ERROR ({e.returncode}) ---

@@ -112,7 +112,11 @@ def test_run_agent_sends_failure_alert_with_trace_id(tmp_path, monkeypatch):
 
     monkeypatch.setattr(scheduler, "ROOT", tmp_path)
     monkeypatch.setattr(scheduler, "LOG_DIR", tmp_path)
-    monkeypatch.setattr(scheduler, "send_message", lambda text: alerts.append(text) or True)
+    monkeypatch.setattr(
+        scheduler,
+        "send_system_alert",
+        lambda **kwargs: alerts.append(kwargs) or True,
+    )
 
     scheduler.run_agent(
         agent_name="broken-agent",
@@ -122,9 +126,8 @@ def test_run_agent_sends_failure_alert_with_trace_id(tmp_path, monkeypatch):
 
     assert log_file.exists()
     assert alerts, "expected failure alert to be sent"
-    assert "broken-agent" in alerts[0]
-    assert "trace_id" not in alerts[0].lower()
-    assert "abc123xyz" in alerts[0]
+    assert alerts[0]["event_key"] == "scheduler:broken-agent"
+    assert alerts[0]["meta"]["trace_id"] == "abc123xyz"
 
 
 def test_parse_daily_cron() -> None:
