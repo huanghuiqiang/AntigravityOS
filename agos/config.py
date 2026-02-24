@@ -241,6 +241,35 @@ def commit_digest_state_db_file() -> Path:
     return state_dir() / "commit_digest.sqlite3"
 
 
+def commit_digest_include_categories() -> bool:
+    return os.getenv("COMMIT_DIGEST_INCLUDE_CATEGORIES", "true").strip().lower() not in {"0", "false", "off"}
+
+
+def commit_digest_include_risk() -> bool:
+    return os.getenv("COMMIT_DIGEST_INCLUDE_RISK", "true").strip().lower() not in {"0", "false", "off"}
+
+
+def commit_digest_risk_paths() -> list[str]:
+    raw = os.getenv(
+        "COMMIT_DIGEST_RISK_PATHS",
+        "scheduler.py,agos/notify.py,docker-compose.yml,apps/tool_gateway/,skills/feishu_bridge/",
+    )
+    return [item.strip() for item in raw.split(",") if item.strip()]
+
+
+def commit_digest_exclude_types() -> set[str]:
+    raw = os.getenv("COMMIT_DIGEST_EXCLUDE_TYPES", "")
+    return {item.strip().lower() for item in raw.split(",") if item.strip()}
+
+
+def commit_digest_max_classify_commits() -> int:
+    return max(1, int(os.getenv("COMMIT_DIGEST_MAX_CLASSIFY_COMMITS", "200")))
+
+
+def commit_digest_max_report_commits() -> int:
+    return max(1, int(os.getenv("COMMIT_DIGEST_MAX_REPORT_COMMITS", "200")))
+
+
 def feishu_bot_webhook() -> str:
     return os.getenv("FEISHU_BOT_WEBHOOK", "").strip()
 

@@ -9,6 +9,8 @@ from agos.config import (
     min_score_threshold, project_root,
     commit_digest_repos, feishu_bot_msg_type,
     notify_provider, notify_system_alerts_enabled,
+    commit_digest_include_categories, commit_digest_include_risk,
+    commit_digest_risk_paths, commit_digest_exclude_types,
 )
 
 
@@ -93,3 +95,21 @@ class TestNotifyConfig:
     def test_notify_switch(self, monkeypatch):
         monkeypatch.setenv("NOTIFY_SYSTEM_ALERTS_ENABLED", "off")
         assert notify_system_alerts_enabled() is False
+
+
+class TestCommitDigestCategoryConfig:
+    def test_commit_digest_include_categories(self, monkeypatch):
+        monkeypatch.setenv("COMMIT_DIGEST_INCLUDE_CATEGORIES", "true")
+        assert commit_digest_include_categories() is True
+
+    def test_commit_digest_include_risk(self, monkeypatch):
+        monkeypatch.setenv("COMMIT_DIGEST_INCLUDE_RISK", "off")
+        assert commit_digest_include_risk() is False
+
+    def test_commit_digest_risk_paths(self, monkeypatch):
+        monkeypatch.setenv("COMMIT_DIGEST_RISK_PATHS", "a/,b.py")
+        assert commit_digest_risk_paths() == ["a/", "b.py"]
+
+    def test_commit_digest_exclude_types(self, monkeypatch):
+        monkeypatch.setenv("COMMIT_DIGEST_EXCLUDE_TYPES", "docs,chore")
+        assert commit_digest_exclude_types() == {"docs", "chore"}

@@ -3,10 +3,12 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 from agents.daily_briefing.commit_digest_renderer import (
+    CommitDigestAnalytics,
     CommitItem,
     build_feishu_post_payload,
     build_feishu_text_payload,
     build_markdown_chunks,
+    build_summary_text,
 )
 
 
@@ -41,3 +43,65 @@ def test_build_payloads() -> None:
     text = build_feishu_text_payload("abc")
     assert post["msg_type"] == "post"
     assert text["msg_type"] == "text"
+
+
+def test_build_markdown_chunks_with_analytics() -> None:
+    commits = [_item("huanghuiqiang/AntigravityOS", "abcdef123", "feat: a", 1)]
+    analytics = CommitDigestAnalytics(
+        total_commits=1,
+        effective_commits=1,
+        category_counts={"feat": 1},
+        high_risk_changes=0,
+        revert_count=0,
+        conclusion="今天以功能推进为主，风险较低。",
+    )
+    chunks = build_markdown_chunks(
+        date_label="2026-02-24",
+        timezone="Asia/Shanghai",
+        commits=commits,
+        analytics=analytics,
+        max_chars=500,
+    )
+    assert "Top 类别" in chunks[0]
+    assert "分类明细" in chunks[0]
+    assert "风险提示" in chunks[0]
+
+
+def test_build_markdown_chunks_compact_fallback() -> None:
+    commits = [_item("repo/a", f"sha{i:03d}", f"feat: m{i}", i % 50) for i in range(20)]
+    analytics = CommitDigestAnalytics(
+        total_commits=20,
+        effective_commits=20,
+        category_counts={"feat": 20},
+        high_risk_changes=0,
+        revert_count=0,
+        conclusion="x" * 200,
+    )
+    chunks = build_markdown_chunks(
+        date_label="2026-02-24",
+        timezone="Asia/Shanghai",
+        commits=commits,
+        analytics=analytics,
+        max_chars=120,
+    )
+    assert chunks
+    assert chunks[0].startswith("【Commit日报】")
+
+
+def test_build_summary_text_with_analytics() -> None:
+    analytics = CommitDigestAnalytics(
+        total_commits=7,
+        effective_commits=6,
+        category_counts={"feat": 3, "fix": 2},
+        high_risk_changes=1,
+        revert_count=0,
+        conclusion="今天以功能推进为主，风险较低。",
+    )
+    summary = build_summary_text(
+        date_label="2026-02-24",
+        timezone="Asia/Shanghai",
+        commits=[],
+        analytics=analytics,
+    )
+    assert "总提交：7" in summary
+    assert "Top 类别" in summary
