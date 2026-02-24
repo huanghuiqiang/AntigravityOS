@@ -87,6 +87,25 @@ curl -sS -X POST http://127.0.0.1:8010/api/tools/health
 - `knowledge-auditor-weekly`: 每周一 `09:00`
 - `weekly-report-sync`: 每周一 `09:10`
 - `inbox-processor`: 每天 `10:30`
+- `daily-commit-bot-push`: 每天 `21:30`（可通过 `COMMIT_DIGEST_CRON` 调整）
+
+### Commit 日报增强字段
+
+每日 Commit 日报支持以下维度：
+
+1. 总提交与有效提交
+2. 分类明细（feat/fix/refactor/test/docs/chore/ci/perf/revert/mixed）
+3. 风险提示（高风险路径变更次数、revert 次数）
+4. 自动结论（功能推进/稳定化/风险提示）
+
+相关配置（`.env`）：
+
+- `COMMIT_DIGEST_INCLUDE_CATEGORIES`
+- `COMMIT_DIGEST_INCLUDE_RISK`
+- `COMMIT_DIGEST_RISK_PATHS`
+- `COMMIT_DIGEST_EXCLUDE_TYPES`
+- `COMMIT_DIGEST_MAX_CLASSIFY_COMMITS`
+- `COMMIT_DIGEST_MAX_REPORT_COMMITS`
 
 ## Telegram 侧可用示例
 
@@ -132,6 +151,12 @@ python agents/knowledge_auditor/auditor.py --silent
 
 - 常见是 `OBSIDIAN_VAULT` 仍指向容器内路径（如 `/app/data/obsidian_vault`）。
 - 本机请改为真实 Vault 路径。
+
+4. Commit 日报分类不符合预期
+
+- 检查提交标题是否符合 `feat:/fix:/docs:` 等前缀规范。
+- 检查 `COMMIT_DIGEST_RISK_PATHS` 是否使用仓库相对路径。
+- 如消息过长被降级，日报会自动保留“日期+总数+Top类别+风险计数”。
 
 ## 相关文档
 
