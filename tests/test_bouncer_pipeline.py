@@ -3,11 +3,14 @@
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
 from datetime import datetime
+import pytest
 
 
 def _load_bouncer_module():
     root = Path(__file__).resolve().parents[1]
     mod_path = root / "agents" / "cognitive_bouncer" / "bouncer.py"
+    if not mod_path.exists():
+        pytest.skip("cognitive_bouncer submodule is not checked out")
     spec = spec_from_file_location("cognitive_bouncer_bouncer", mod_path)
     assert spec and spec.loader
     mod = module_from_spec(spec)
