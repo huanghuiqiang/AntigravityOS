@@ -67,6 +67,7 @@ class _FakeSchedule:
 def test_schedule_jobs_supports_weekly(monkeypatch):
     fake_schedule = _FakeSchedule()
     monkeypatch.setattr(scheduler, "schedule", fake_schedule)
+    monkeypatch.setattr(scheduler, "commit_digest_enabled", lambda: False)
     monkeypatch.setattr(
         scheduler,
         "AGENTS",
@@ -88,6 +89,7 @@ def test_schedule_jobs_supports_weekly(monkeypatch):
 def test_schedule_jobs_skips_invalid_weekday(monkeypatch):
     fake_schedule = _FakeSchedule()
     monkeypatch.setattr(scheduler, "schedule", fake_schedule)
+    monkeypatch.setattr(scheduler, "commit_digest_enabled", lambda: False)
     monkeypatch.setattr(
         scheduler,
         "AGENTS",
@@ -123,3 +125,21 @@ def test_run_agent_sends_failure_alert_with_trace_id(tmp_path, monkeypatch):
     assert "broken-agent" in alerts[0]
     assert "trace_id" not in alerts[0].lower()
     assert "abc123xyz" in alerts[0]
+
+
+def test_parse_daily_cron() -> None:
+    minute, hour = scheduler._parse_daily_cron("30 21 * * *")
+    assert minute == 30
+    assert hour == 21
+
+
+def test_schedule_jobs_adds_commit_digest_from_env(monkeypatch):
+    fake_schedule = _FakeSchedule()
+    monkeypatch.setattr(scheduler, "schedule", fake_schedule)
+    monkeypatch.setattr(scheduler, "AGENTS", {})
+    monkeypatch.setattr(scheduler, "commit_digest_enabled", lambda: True)
+    monkeypatch.setattr(scheduler, "commit_digest_cron", lambda: "30 21 * * *")
+
+    scheduler.schedule_jobs()
+    assert len(fake_schedule.calls) == 1
+    assert fake_schedule.calls[0]["agent"] == "daily-commit-bot-push"

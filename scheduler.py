@@ -7,6 +7,7 @@ from pathlib import Path
 from datetime import datetime
 
 from agos.config import agent_log_file, project_root
+from agos.config import commit_digest_cron, commit_digest_enabled
 from agos.notify import send_message
 
 ROOT = project_root()
@@ -144,6 +145,18 @@ An unexpected error occurred: {e}
 
 
 def schedule_jobs():
+    if commit_digest_enabled():
+        cron = commit_digest_cron()
+        try:
+            minute, hour = _parse_daily_cron(cron)
+            AGENTS["daily-commit-bot-push"] = {
+                "command": [PYTHON_BIN, "agents/daily_briefing/commit_digest.py"],
+                "log_file": agent_log_file("commit_digest"),
+                "schedule": {"hour": hour, "minute": minute},
+            }
+        except ValueError as exc:
+            print(f"Warning: invalid COMMIT_DIGEST_CRON='{cron}', skip commit digest schedule: {exc}")
+
     for agent_name, config in AGENTS.items():
         command = config["command"]
         log_file = config["log_file"]
@@ -175,6 +188,24 @@ def schedule_jobs():
             # Add other units if needed (e.g., minutes, days)
         else:
             print(f"Warning: No valid schedule found for {agent_name}")
+
+
+def _parse_daily_cron(expr: str) -> tuple[int, int]:
+    parts = expr.strip().split()
+    if len(parts) != 5:
+        raise ValueError("expected 5 fields")
+    minute_text, hour_text, day, month, weekday = parts
+    if day != "*" or month != "*" or weekday != "*":
+        raise ValueError("only daily cron '* * *' supported")
+    if not minute_text.isdigit() or not hour_text.isdigit():
+        raise ValueError("minute/hour must be numeric")
+    minute = int(minute_text)
+    hour = int(hour_text)
+    if minute < 0 or minute > 59:
+        raise ValueError("minute out of range")
+    if hour < 0 or hour > 23:
+        raise ValueError("hour out of range")
+    return minute, hour
 
 
 if __name__ == "__main__":

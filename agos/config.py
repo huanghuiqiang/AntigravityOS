@@ -160,6 +160,71 @@ def bouncer_dedup_query_drop_keys() -> set[str]:
     return {x.strip().lower() for x in raw.split(",") if x.strip()}
 
 
+def commit_digest_enabled() -> bool:
+    return os.getenv("COMMIT_DIGEST_ENABLED", "true").strip().lower() not in {"0", "false", "off"}
+
+
+def commit_digest_timezone() -> str:
+    return os.getenv("COMMIT_DIGEST_TIMEZONE", "Asia/Shanghai").strip() or "Asia/Shanghai"
+
+
+def commit_digest_cron() -> str:
+    return os.getenv("COMMIT_DIGEST_CRON", "30 21 * * *").strip() or "30 21 * * *"
+
+
+def commit_digest_repos() -> list[str]:
+    raw = os.getenv("COMMIT_DIGEST_REPOS", "").strip()
+    if not raw:
+        default_owner = os.getenv("GITHUB_DEFAULT_OWNER", "huanghuiqiang").strip() or "huanghuiqiang"
+        default_repo = os.getenv("GITHUB_DEFAULT_REPO", "AntigravityOS").strip() or "AntigravityOS"
+        return [f"{default_owner}/{default_repo}"]
+    return [x.strip() for x in raw.split(",") if x.strip()]
+
+
+def commit_digest_authors() -> list[str]:
+    raw = os.getenv("COMMIT_DIGEST_AUTHORS", "").strip()
+    if not raw:
+        return []
+    return [x.strip() for x in raw.split(",") if x.strip()]
+
+
+def commit_digest_max_retries() -> int:
+    return int(os.getenv("COMMIT_DIGEST_MAX_RETRIES", "3"))
+
+
+def commit_digest_retry_backoff_sec() -> int:
+    return int(os.getenv("COMMIT_DIGEST_RETRY_BACKOFF_SEC", "2"))
+
+
+def commit_digest_force_send() -> bool:
+    return os.getenv("FORCE_SEND", "false").strip().lower() in {"1", "true", "on"}
+
+
+def commit_digest_dry_run() -> bool:
+    return os.getenv("COMMIT_DIGEST_DRY_RUN", "false").strip().lower() in {"1", "true", "on"}
+
+
+def commit_digest_alert_on_failure() -> bool:
+    return os.getenv("COMMIT_DIGEST_ALERT_ON_FAILURE", "true").strip().lower() not in {"0", "false", "off"}
+
+
+def commit_digest_state_db_file() -> Path:
+    return state_dir() / "commit_digest.sqlite3"
+
+
+def feishu_bot_webhook() -> str:
+    return os.getenv("FEISHU_BOT_WEBHOOK", "").strip()
+
+
+def feishu_bot_secret() -> str:
+    return os.getenv("FEISHU_BOT_SECRET", "").strip()
+
+
+def feishu_bot_msg_type() -> str:
+    msg_type = os.getenv("FEISHU_BOT_MSG_TYPE", "post").strip().lower()
+    return msg_type if msg_type in {"post", "text"} else "post"
+
+
 def synth_max_batch() -> int:
     return int(os.getenv("SYNTH_MAX_BATCH", "40"))
 

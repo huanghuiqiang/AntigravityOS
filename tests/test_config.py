@@ -7,6 +7,7 @@ from agos.config import (
     openrouter_api_key, telegram_bot_token, telegram_chat_id,
     model_bouncer, model_synthesizer,
     min_score_threshold, project_root,
+    commit_digest_repos, feishu_bot_msg_type,
 )
 
 
@@ -65,3 +66,15 @@ class TestThresholds:
     def test_custom_score(self, monkeypatch):
         monkeypatch.setenv("MIN_SCORE_THRESHOLD", "7.5")
         assert min_score_threshold() == 7.5
+
+
+class TestCommitDigest:
+    def test_commit_digest_repos_default(self, monkeypatch):
+        monkeypatch.delenv("COMMIT_DIGEST_REPOS", raising=False)
+        monkeypatch.setenv("GITHUB_DEFAULT_OWNER", "o")
+        monkeypatch.setenv("GITHUB_DEFAULT_REPO", "r")
+        assert commit_digest_repos() == ["o/r"]
+
+    def test_feishu_bot_msg_type_normalized(self, monkeypatch):
+        monkeypatch.setenv("FEISHU_BOT_MSG_TYPE", "TEXT")
+        assert feishu_bot_msg_type() == "text"
